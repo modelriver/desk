@@ -1,0 +1,17 @@
+# Kept out of the image: local settings, data, build output and tooling.
+# .local/ stays in: it holds @modelriver/client until that version is on npm.
+.git
+.github
+node_modules
+dist
+.output
+.tanstack
+.env
+.env.*
+!.env.example
+/var
+/data
+*.db
+*.db-*
+test
+.DS_Store

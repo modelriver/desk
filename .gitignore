@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.output/
+.env*
+!.env.example
+# Your real data folder and database; only the repo root, so examples/data is published.
+/data/
+/var/
+*.db
+*.db-*
+.DS_Store
+.tanstack/
+.local/

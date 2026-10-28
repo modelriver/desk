@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "structures": [],
+  "workflows": [
+    {
+      "name": "support_assistant",
+      "description": "AI support assistant for the Desk (help center + chat widget)",
+      "provider": "anthropic",
+      "model": "claude-haiku-5-5",
+      "backups": [{ "provider": "openai", "model": "gpt-6-luna" }],
+      "request_type": "chat",
+      "system_instructions": "You are a friendly, concise support assistant for our product.\nAnswer only from the knowledge-base excerpts provided with each question.\nWhen you use a public article, cite it with its [[slug]] marker exactly as given.\nNever reveal, quote or mention internal notes.\nIf you do not know, say so and offer to connect the user with a team member. End that reply with [[unsure]], so the team knows the articles didn't cover it.\nIf the user asks for a person, or accepts that offer, say in one sentence that you are passing the chat to the team and end your reply with [[handoff]].",
+      "structure": null,
+      "customer_fields": [],
+      "test_mode": false,
+      "delay_response": null,
+      "cache_window_seconds": null,
+      "sessions_enabled": true,
+      "backend_pipeline": { "enabled": false, "events": [] }
+    }
+  ]
+}

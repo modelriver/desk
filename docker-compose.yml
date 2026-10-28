@@ -1,0 +1,58 @@
+# Desk behind Caddy, which gets and renews the HTTPS certificate on its own.
+#
+#   cp deploy/docker/env.example .env    then fill it in
+#   docker compose up -d --build
+#   docker compose exec desk node scripts/create-admin.ts
+#
+# Point DESK_DOMAIN's DNS at this server and open ports 80 and 443 first.
+# See deploy/README.md for the rest.
+
+services:
+  desk:
+    build: .
+    image: desk:local
+    restart: unless-stopped
+    env_file: .env
+    # Fixed for the container; everything else comes from .env.
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      DATA_DIR: /data/data
+      DATABASE_PATH: /data/desk.db
+      # Caddy is the one proxy in front, so its X-Forwarded-For entry is the visitor.
+      TRUST_PROXY_HOPS: "1"
+    volumes:
+      - desk-data:/data
+    expose:
+      - "3000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Only one Desk at a time: rate limits live in memory and the database is one file.
+
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    # Only the domain: Caddy never sees your keys.
+    environment:
+      DESK_DOMAIN: ${DESK_DOMAIN:?Set DESK_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      desk:
+        condition: service_healthy
+
+volumes:
+  # Your articles, notes, database and branding. Back this up.
+  desk-data:
+  # Caddy's certificates.
+  caddy-data:
+  caddy-config:

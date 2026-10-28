@@ -1,0 +1,14 @@
+# Caddy in front of Desk (docker-compose.yml). It gets a certificate for
+# DESK_DOMAIN from Let's Encrypt and renews it, and redirects HTTP to HTTPS.
+{$DESK_DOMAIN} {
+	encode zstd gzip
+
+	# Desk refuses bigger requests anyway; stop them here first.
+	request_body {
+		max_size 2MB
+	}
+
+	# Caddy replaces any X-Forwarded-For a visitor sends with their real
+	# address, which Desk reads with TRUST_PROXY_HOPS=1.
+	reverse_proxy desk:3000
+}

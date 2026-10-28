@@ -1,0 +1,432 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. The values come from support.config.json: the server turns
+ * it into :root variables (light and dark) in a <style> tag after this file.
+ * See src/lib/site-config.ts for the defaults and the list of tokens.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-ring: var(--ring);
+  --font-sans: var(--app-font-sans);
+  --font-serif: var(--app-font-serif);
+  --font-mono: var(--app-font-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+}
+
+/*
+ * No motion anywhere: every change is instant. This also covers animations
+ * or transitions added later by mistake. The exceptions opt in: an element
+ * with a data-motion attribute (the chat panel's open/close), and the parts
+ * of a help bot drawn with motion on (.bot-live, below).
+ */
+*:not([data-motion], .bot-live *),
+*:not([data-motion], .bot-live *)::before,
+*:not([data-motion], .bot-live *)::after {
+  animation: none !important;
+  transition: none !important;
+}
+* {
+  scroll-behavior: auto !important;
+}
+
+/* Chat panel: a short lift-and-fade from the launcher's corner. */
+@keyframes chat-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes chat-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+.chat-enter {
+  animation: chat-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transform-origin: bottom right;
+}
+.chat-leave {
+  animation: chat-out 120ms ease-in both;
+  transform-origin: bottom right;
+}
+/* The launcher coming back after the panel closes. */
+@keyframes launcher-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.launcher-in {
+  animation: launcher-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* The typing dots while the assistant writes a reply: a wave, one dot after another. */
+@keyframes typing-dot {
+  0%, 60%, 100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+.typing-dot {
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-motion] {
+    animation: none !important;
+  }
+}
+
+/*
+ * The help bot (components/HelpBot.tsx). Ink is the text color and paper the
+ * card color, so it follows the theme; inverted swaps them for a dark button.
+ */
+.bot {
+  --bot-ink: var(--foreground);
+  --bot-paper: var(--card);
+}
+.bot-inverted {
+  --bot-ink: var(--primary);
+  --bot-paper: var(--primary-foreground);
+}
+.bot-ink { fill: var(--bot-ink); }
+.bot-paper { fill: var(--bot-paper); }
+.bot-ink-stroke { stroke: var(--bot-ink); }
+.bot-paper-stroke { stroke: var(--bot-paper); }
+/* On a dark button the outline, antenna and extras turn light; only the visor stays dark. */
+.bot-inverted .bot-ink:not(rect) { fill: var(--bot-paper); }
+.bot-inverted .bot-ink-stroke { stroke: var(--bot-paper); }
+
+/* Everything moves around its own box. */
+.bot * { transform-box: fill-box; transform-origin: center; }
+
+.bot-live .bot-bob { animation: bot-bob 2.6s ease-in-out infinite; }
+.bot-live .bot-shadow { animation: bot-shadow 2.6s ease-in-out infinite; }
+.bot-live .bot-blink { animation: bot-blink 4.2s infinite; }
+.bot-live .bot-blink-late { animation-delay: 2.1s; }
+.bot-live .bot-look { animation: bot-look 7s ease-in-out infinite; }
+.bot-antenna { transform-origin: 50% 100%; }
+.bot-live .bot-antenna { animation: bot-ant 2.6s ease-in-out infinite; }
+.bot-live.bot-thinking .bot-antenna { animation-duration: 0.9s; }
+.bot-live.bot-happy .bot-antenna { animation-duration: 1.2s; }
+.bot-arm { transform-origin: 50% 10%; }
+.bot-live.bot-idle .bot-arm { animation: bot-arm 5s ease-in-out infinite; }
+.bot-live.bot-happy .bot-arm { animation: bot-arm 1.4s ease-in-out infinite; }
+.bot-live .bot-jump { animation: bot-jump 1.2s cubic-bezier(0.3, 0, 0.3, 1) infinite; }
+.bot-live .bot-shadow-jump { animation: bot-shadow-jump 1.2s cubic-bezier(0.3, 0, 0.3, 1) infinite; }
+.bot-tilt { transform-origin: 50% 100%; }
+.bot-live .bot-tilt { animation: bot-tilt 3.4s ease-in-out infinite; }
+.bot-live .bot-dot { animation: bot-dot 1.2s ease-in-out infinite; }
+.bot-live .bot-d2 { animation-delay: 0.15s; }
+.bot-live .bot-d3 { animation-delay: 0.3s; }
+.bot-live .bot-pulse { animation: bot-pulse 1.2s ease-in-out infinite; }
+.bot-breathe { transform-origin: 50% 100%; }
+.bot-live .bot-breathe { animation: bot-breathe 4s ease-in-out infinite; }
+.bot-z { opacity: 0; }
+.bot:not(.bot-live) .bot-z:first-child { opacity: 1; }
+.bot-live .bot-z { animation: bot-z 3s ease-out infinite; }
+.bot-live .bot-z2 { animation-delay: 1s; }
+.bot-live .bot-z3 { animation-delay: 2s; }
+.bot-wave-l, .bot-wave-r { opacity: 0; }
+.bot:not(.bot-live) .bot-wave-l:not(.bot-late), .bot:not(.bot-live) .bot-wave-r:not(.bot-late) { opacity: 1; }
+.bot-live .bot-wave-l { animation: bot-wave-l 1.6s ease-out infinite; }
+.bot-live .bot-wave-r { animation: bot-wave-r 1.6s ease-out infinite; }
+.bot-live .bot-late { animation-delay: 0.5s; }
+
+@keyframes bot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes bot-shadow { 0%, 100% { transform: scaleX(1); } 50% { transform: scaleX(0.9); } }
+@keyframes bot-blink { 0%, 90%, 96%, 100% { transform: scaleY(1); } 93% { transform: scaleY(0.1); } }
+@keyframes bot-look {
+  0%, 30% { transform: translate(0, 0); }
+  35%, 50% { transform: translate(-4px, 0); }
+  55%, 70% { transform: translate(4px, -2px); }
+  75%, 100% { transform: translate(0, 0); }
+}
+@keyframes bot-ant { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@keyframes bot-arm {
+  0%, 60%, 100% { transform: rotate(0); }
+  66% { transform: rotate(-150deg); }
+  72% { transform: rotate(-115deg); }
+  78% { transform: rotate(-150deg); }
+  84% { transform: rotate(-115deg); }
+  92% { transform: rotate(0); }
+}
+@keyframes bot-jump { 0%, 55%, 100% { transform: translateY(0); } 28% { transform: translateY(-10px); } }
+@keyframes bot-shadow-jump { 0%, 55%, 100% { transform: scaleX(1); } 28% { transform: scaleX(0.7); } }
+@keyframes bot-tilt { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(3deg); } }
+@keyframes bot-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+@keyframes bot-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
+@keyframes bot-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.02, 0.97); } }
+@keyframes bot-z {
+  0% { opacity: 0; transform: translate(0, 0); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(8px, -18px); }
+}
+@keyframes bot-wave-l {
+  0% { opacity: 0; transform: translateX(0); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-7px); }
+}
+@keyframes bot-wave-r {
+  0% { opacity: 0; transform: translateX(0); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(7px); }
+}
+
+/* Still, for people who prefer less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .bot-live * {
+    animation: none !important;
+  }
+  .bot-live .bot-z:first-child,
+  .bot-live .bot-wave-l:not(.bot-late),
+  .bot-live .bot-wave-r:not(.bot-late) {
+    opacity: 1;
+  }
+}
+
+/*
+ * Rendered Markdown (articles, AI answers, agent replies). Plain CSS on
+ * purpose: markdown-it emits bare elements, and this keeps the typography
+ * plugin out of the dependency list.
+ */
+.prose {
+  font-family: var(--app-font-serif);
+  overflow-wrap: anywhere;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose > :last-child {
+  margin-bottom: 0;
+}
+.prose p,
+.prose ul,
+.prose ol,
+.prose pre,
+.prose table,
+.prose blockquote {
+  margin: 0.75em 0;
+}
+.prose ul {
+  list-style: disc;
+  padding-left: 1.25em;
+}
+.prose ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.prose li + li {
+  margin-top: 0.25em;
+}
+.prose li::marker {
+  color: var(--muted-foreground);
+}
+.prose strong {
+  font-weight: 600;
+}
+.prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.prose a:hover {
+  color: var(--primary-hover);
+}
+.prose h1,
+.prose h2,
+.prose h3 {
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 1.6em 0 0.5em;
+}
+.prose h1 {
+  font-size: 2rem;
+  margin-top: 0;
+}
+.prose h2 {
+  font-size: 1.35rem;
+}
+.prose h3 {
+  font-size: 1.1rem;
+}
+.prose code {
+  font-family: var(--app-font-mono);
+  font-size: 0.85em;
+  background: var(--muted);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.prose pre {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.85em 1em;
+  overflow-x: auto;
+}
+.prose pre code {
+  background: none;
+  padding: 0;
+}
+.prose blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--app-font-sans);
+  font-size: 0.9em;
+  display: block;
+  overflow-x: auto;
+}
+.prose th,
+.prose td {
+  text-align: left;
+  padding: 0.5em 0.75em;
+  border-bottom: 1px solid var(--border);
+}
+.prose th {
+  font-weight: 600;
+}
+.prose img {
+  max-width: 100%;
+  border-radius: var(--radius);
+}
+.prose hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+/* Long-form article pages read a little larger. */
+.prose-article {
+  font-size: 1.125rem;
+  line-height: 1.7;
+}
+/* Linked sections land below the sticky header. */
+.prose-article :is(h1, h2, h3, h4) {
+  scroll-margin-top: 5rem;
+}
+/* The "#" link to a section: shown on hover or keyboard focus. */
+.prose-article .heading-anchor {
+  margin-left: 0.4em;
+  color: var(--muted-foreground);
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+}
+.prose-article :is(h2, h3, h4):hover .heading-anchor,
+.prose-article .heading-anchor:focus-visible {
+  opacity: 1;
+}
+
+/* Answers in the chat sit at body size. */
+.prose-chat {
+  font-size: 0.975rem;
+  line-height: 1.6;
+}
+
+/*
+ * The article editor: the title and body look as they will on the help
+ * center (.prose-article), so writing is previewing.
+ */
+.editor-title {
+  width: 100%;
+  font-family: var(--app-font-serif);
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.editor-body {
+  min-height: 50vh;
+  outline: none;
+}
+/* Hints in empty lines (only where the placeholder has text). */
+.editor-body [data-placeholder]:not([data-placeholder=''])::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+.editor-body img.ProseMirror-selectednode,
+.editor-body hr.ProseMirror-selectednode {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.editor-body .selectedCell {
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+}
+.editor-body table p {
+  margin: 0;
+}

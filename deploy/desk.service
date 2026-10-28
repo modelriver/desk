@@ -1,0 +1,31 @@
+# systemd unit for Desk.
+# Install: sudo cp deploy/desk.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now desk
+[Unit]
+Description=Desk (help center, AI chat, team dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=desk
+Group=desk
+WorkingDirectory=/opt/desk
+# MODELRIVER_API_KEY, DATA_DIR, DATABASE_PATH, NODE_ENV=production, TRUST_PROXY_HOPS=1, PORT, ...
+EnvironmentFile=/etc/desk/env
+ExecStart=/usr/bin/node server.mjs
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/desk
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
