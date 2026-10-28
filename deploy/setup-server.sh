@@ -43,7 +43,7 @@ Usage: sudo ./deploy/setup-server.sh [options]
 
 Where the app comes from (pick one):
   --source DIR         Copy the app from DIR, e.g. "." from a checkout you
-                       uploaded to the server (includes .local/)
+                       uploaded to the server
   --repo URL           Clone from git (default https://github.com/modelriver/desk.git)
   --branch NAME        Branch to clone or update (default main)
 

@@ -2,8 +2,10 @@
 # Desk in a container: one Node.js process and a SQLite file. Your data,
 # database and branding live in the /data volume.
 #
-#   docker compose up -d        (with Caddy for HTTPS; see deploy/README.md)
-#   docker build -t desk .      (just the image)
+# Published as ghcr.io/modelriver/desk for each release (.github/workflows/docker.yml).
+#
+#   docker compose up -d        (the published image, with Caddy for HTTPS; see deploy/README.md)
+#   docker build -t desk .      (just the image, from this copy of the code)
 
 ARG NODE_VERSION=26.12.1
 

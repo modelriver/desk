@@ -43,17 +43,18 @@ Options: `--sample-data` starts with the example articles, `--firewall` turns on
 
 ## Docker
 
-`docker-compose.yml` runs Desk with [Caddy](https://caddyserver.com) in front, which gets and renews the HTTPS certificate on its own. It works on any server with Docker and Compose.
+`docker-compose.yml` runs the published image, `ghcr.io/modelriver/desk` (amd64 and arm64), with [Caddy](https://caddyserver.com) in front, which gets and renews the HTTPS certificate on its own. Node.js, SQLite and Caddy all come in the containers; the server only needs Docker with Compose 2.23 or newer. Docker's own service takes a little memory on top of Desk; on a very small server (512 MB), the systemd setup below is the better fit.
 
 1. Point your domain's DNS at the server and open ports 80 and 443.
-2. From a copy of Desk on the server (include `.local/` until `@modelriver/client` 1.7.0 is on npm):
+2. In an empty folder on the server (its name becomes part of the volume names):
 
 ```bash
-cp deploy/docker/env.example .env
+curl -fsSLO https://raw.githubusercontent.com/modelriver/desk/main/docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/modelriver/desk/main/deploy/docker/env.example -o .env
 # Set DESK_DOMAIN, APP_URL and MODELRIVER_API_KEY in .env, then fill in the secrets:
 sed -i "s|^DESK_SECRET_KEY=.*|DESK_SECRET_KEY=$(openssl rand -base64 32)|" .env
 sed -i "s|^DESK_IDENTITY_SECRET=.*|DESK_IDENTITY_SECRET=$(openssl rand -base64 48 | tr -d '\n')|" .env
-docker compose up -d --build
+docker compose up -d
 docker compose exec desk node scripts/create-admin.ts
 ```
 
@@ -66,12 +67,14 @@ Make the secrets once: never change `DESK_SECRET_KEY` afterwards, or connector k
 | Branding | `support.config.json` on the volume, with any logo next to it (copied there on the first start). Copy it out with `docker compose cp desk:/data/support.config.json .`, edit it, copy it back with `docker compose cp support.config.json desk:/data/`, then `docker compose restart desk` |
 | Certificates | The `caddy-data` volume |
 
-- **Updating:** `docker compose up -d --build` after updating your copy of Desk. Settings, data and certificates stay.
+- **Updating:** `docker compose pull && docker compose up -d`. Settings, data and certificates stay. The `1` image tag follows every 1.x release; set `DESK_VERSION=1.0.0` in `.env` to stay on one.
+- **Your own changes:** from a copy of the code, add the override that builds it instead of pulling: `docker compose -f docker-compose.yml -f docker-compose.source.yml up -d --build`.
 - **Sample articles:** set `DESK_SAMPLE_DATA=true` in `.env` before the first start.
 - **Logs:** `docker compose logs -f desk`.
 - **Your own proxy instead of Caddy:** remove the `caddy` service, give `desk` `ports: ["127.0.0.1:3000:3000"]`, and keep `TRUST_PROXY_HOPS=1` if exactly one proxy is in front.
 - **One container only.** Rate limits live in memory and the database is one file, so don't scale `desk` beyond one.
-- **Your own `.env`.** In a checkout you also develop in, `.env` holds your development settings; use a separate copy of Desk for Docker.
+- **Your own `.env`.** In a checkout you also develop in, `.env` holds your development settings; run Docker from a separate folder.
+- **Releases:** pushing a version tag that matches `package.json` (`git tag v1.0.1 && git push origin v1.0.1`) publishes the image; see `.github/workflows/docker.yml`.
 
 ## By hand (systemd)
 

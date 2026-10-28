@@ -1,6 +1,6 @@
 # Kept out of the image: local settings, data, build output and tooling.
-# .local/ stays in: it holds @modelriver/client until that version is on npm.
 .git
+.local
 .github
 node_modules
 dist

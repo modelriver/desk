@@ -499,11 +499,12 @@ On a fresh Ubuntu server, one script does it all: Node.js, the `desk` user, the 
 sudo ./deploy/setup-server.sh --source . --domain support.acme.com --email you@acme.com
 ```
 
-With Docker instead, `docker-compose.yml` runs Desk behind Caddy, which handles HTTPS:
+With Docker instead, `docker-compose.yml` runs the published image (`ghcr.io/modelriver/desk`) behind Caddy, which handles HTTPS. No clone needed; the server only needs Docker:
 
 ```bash
-cp deploy/docker/env.example .env    # then fill it in
-docker compose up -d --build
+curl -fsSLO https://raw.githubusercontent.com/modelriver/desk/main/docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/modelriver/desk/main/deploy/docker/env.example -o .env    # then fill it in
+docker compose up -d
 ```
 
 See [`deploy/README.md`](deploy/README.md) for the options and what goes where. By hand, in short:
