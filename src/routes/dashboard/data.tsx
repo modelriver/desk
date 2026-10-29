@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { createFileRoute, Link, redirect, useBlocker, useNavigate, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { createDataFolder, deleteDataItem, getDataTree, moveDataItem, renameDataFolder, setArticleStatus, uploadFile } from '../../functions/data.ts'
+import {
+  checkFolderUpload,
+  createDataFolder,
+  deleteDataItem,
+  getDataTree,
+  moveDataItem,
+  renameDataFolder,
+  setArticleStatus,
+  uploadFile,
+  uploadFolderBatch,
+} from '../../functions/data.ts'
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -15,6 +25,7 @@ import {
   FilePlusIcon,
   FolderIcon,
   FolderPlusIcon,
+  FolderUploadIcon,
   GripIcon,
   LockIcon,
   MoveIcon,
@@ -37,6 +48,8 @@ import { applyMove, type Move } from '../../lib/tree-edit.ts'
 import { helpPath } from '../../lib/help-path.ts'
 import { BusyIcon } from '../../components/BusyIcon.tsx'
 import { errorMessage } from '../../lib/errors.ts'
+import { describeProblems, describeSkipped, foldersFor, packBatches, type UploadPlan } from '../../lib/folder-upload.ts'
+import { droppedEntries, pickedFolder, readDropped, type PickedFile } from '../../lib/dropped-files.ts'
 
 // The knowledge base: everything the help center and the AI answer from, as
 // two trees (Public = help-center articles, Private = internal notes). Folders
@@ -193,6 +206,8 @@ function DataPage() {
   const rename = useServerFn(renameDataFolder)
   const remove = useServerFn(deleteDataItem)
   const upload = useServerFn(uploadFile)
+  const checkUpload = useServerFn(checkFolderUpload)
+  const uploadBatch = useServerFn(uploadFolderBatch)
   const setStatus$ = useServerFn(setArticleStatus)
 
   const { collapsed, toggle } = useCollapsed()
@@ -206,9 +221,12 @@ function DataPage() {
   const [moving, setMoving] = useState<Item | null>(null)
   const [previewing, setPreviewing] = useState<{ visibility: Visibility; path: string; name: string } | null>(null)
   const [uploadTarget, setUploadTarget] = useState<{ visibility: Visibility; folder: string } | null>(null)
+  // A checked folder upload that would replace existing files, waiting for a yes.
+  const [replacing, setReplacing] = useState<{ files: PickedFile[]; visibility: Visibility; folder: string; plan: UploadPlan } | null>(null)
   const [arrangement, setArrangement] = useState<Arrangement | null>(null)
   const [discarding, setDiscarding] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const folderInput = useRef<HTMLInputElement>(null)
 
   const arranging = arrangement !== null
   const changes = arrangement?.moves.length ?? 0
@@ -337,6 +355,52 @@ function DataPage() {
     })
   }
 
+  // A whole folder: checked on the server first, so nothing is written if any
+  // of it can't go in; then sent in batches small enough for the proxy.
+  const uploadFolder = (read: () => Promise<PickedFile[]>, visibility: Visibility, folder: string) => {
+    void run(async () => {
+      const files = await read()
+      if (!files.length) return { text: 'That folder is empty.' }
+      const check = await checkUpload({ data: { visibility, folder, entries: files.map((f) => ({ path: f.path, size: f.file.size })) } })
+      if (!check.ok) throw new Error(describeProblems(check.problems))
+      if (check.plan.files.some((f) => f.replaces)) {
+        setReplacing({ files, visibility, folder, plan: check.plan })
+        return
+      }
+      return sendFolder(files, visibility, folder, check.plan)
+    })
+  }
+
+  const sendFolder = async (files: PickedFile[], visibility: Visibility, folder: string, plan: UploadPlan) => {
+    const bySource = new Map(files.map((f) => [f.path, f.file]))
+    const titles = Object.fromEntries(plan.folders.map((f) => [f.path, f.title]))
+    const items = plan.files.map((f) => ({ path: f.path, file: bySource.get(f.source)!, size: bySource.get(f.source)!.size }))
+    const total = items.length
+    let done = 0
+    try {
+      for (const batch of packBatches(items)) {
+        const form = new FormData()
+        form.set('visibility', visibility)
+        form.set('titles', JSON.stringify(Object.fromEntries(foldersFor(batch.map((i) => i.path), titles).map((f) => [f.path, f.title]))))
+        for (const item of batch) {
+          form.append('path', item.path)
+          form.append('file', item.file)
+        }
+        await uploadBatch({ data: form })
+        done += batch.length
+        if (done < total) setStatus({ ok: true, text: `Uploading… ${done} of ${total} files.` })
+      }
+    } catch (err) {
+      const reason = errorMessage(err, 'Something went wrong.')
+      throw new Error(done ? `Uploaded ${done} of ${total} files, then stopped: ${reason}` : reason)
+    }
+    toggle(keyOf(visibility, folder), true)
+    for (const f of plan.folders) toggle(keyOf(visibility, f.path), true)
+    const made = plan.folders.length ? ` and made ${plan.folders.length} folder${plan.folders.length === 1 ? '' : 's'}` : ''
+    const skipped = describeSkipped(plan.skipped, visibility)
+    return { text: `Uploaded ${total} file${total === 1 ? '' : 's'}${made}.${skipped ? ` ${skipped}` : ''}` }
+  }
+
   // Every folder, for "Move to…".
   const folderChoices = useMemo(() => {
     const out: FolderChoice[] = []
@@ -361,6 +425,7 @@ function DataPage() {
     setEditing,
     onMove: moveItem,
     onUpload: uploadFiles,
+    onUploadFolder: uploadFolder,
     onRename: (visibility, path, title) => void run(async () => (await rename({ data: { visibility, path, title } }), { text: `Renamed to “${title}”.` })),
     onCreateFolder: (visibility, parent, title) =>
       void run(async () => {
@@ -379,6 +444,10 @@ function DataPage() {
     onAskUpload: (visibility, folder) => {
       setUploadTarget({ visibility, folder })
       fileInput.current?.click()
+    },
+    onAskUploadFolder: (visibility, folder) => {
+      setUploadTarget({ visibility, folder })
+      folderInput.current?.click()
     },
     onNewArticle: (visibility, folder) => void navigate({ to: '/dashboard/editor', search: { visibility, folder } }),
     onStatus: (text) => setStatus({ ok: true, text }),
@@ -424,6 +493,18 @@ function DataPage() {
         className="hidden"
         onChange={(e) => {
           if (uploadTarget && e.target.files) uploadFiles(e.target.files, uploadTarget.visibility, uploadTarget.folder)
+          e.target.value = ''
+        }}
+      />
+      <input
+        ref={folderInput}
+        type="file"
+        // A folder picker: every file inside, each with its path in the folder.
+        {...{ webkitdirectory: '' }}
+        className="hidden"
+        onChange={(e) => {
+          const picked = e.target.files ? [...e.target.files] : []
+          if (uploadTarget && picked.length) uploadFolder(async () => pickedFolder(picked), uploadTarget.visibility, uploadTarget.folder)
           e.target.value = ''
         }}
       />
@@ -476,7 +557,7 @@ function DataPage() {
               className="h-9 w-full rounded-md border border-input bg-card pr-3 pl-9 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring"
             />
           </div>
-          <p className="text-xs text-muted-foreground">To reorder or move things, use Arrange. Drop files from your computer onto a folder to upload them.</p>
+          <p className="text-xs text-muted-foreground">To reorder or move things, use Arrange. Drop files or folders from your computer onto a folder to upload them.</p>
         </div>
       )}
 
@@ -595,6 +676,40 @@ function DataPage() {
             : 'The AI stops using it.'}{' '}
         This can’t be undone.
       </ConfirmDialog>
+      <ConfirmDialog
+        open={replacing !== null}
+        title={(() => {
+          const n = replacing?.plan.files.filter((f) => f.replaces).length ?? 0
+          return `Replace ${n === 1 ? 'a file that’s' : `${n} files that are`} already here?`
+        })()}
+        confirmLabel="Upload and replace"
+        busy={busy}
+        onClose={() => setReplacing(null)}
+        onConfirm={() => {
+          if (!replacing) return
+          const { files, visibility, folder, plan } = replacing
+          setReplacing(null)
+          void run(() => sendFolder(files, visibility, folder, plan))
+        }}
+      >
+        {(() => {
+          const paths = replacing?.plan.files.filter((f) => f.replaces).map((f) => f.path) ?? []
+          const shown = paths.slice(0, 3)
+          const rest = paths.length - shown.length
+          return (
+            <>
+              The upload has files with the same names as{' '}
+              {shown.map((p, i) => (
+                <span key={p}>
+                  {i > 0 && (i === shown.length - 1 && !rest ? ' and ' : ', ')}
+                  <span className="font-mono text-xs">{p}</span>
+                </span>
+              ))}
+              {rest > 0 && ` and ${rest} more`}. Their content will be replaced by the uploaded files. This can’t be undone.
+            </>
+          )
+        })()}
+      </ConfirmDialog>
       <FilePreview file={previewing} onClose={() => setPreviewing(null)} />
     </>
   )
@@ -615,6 +730,8 @@ interface TreeShared {
   setEditing: (e: TreeShared['editing']) => void
   onMove: (item: Item, to: { visibility: Visibility; folder: string; before: string | null }) => void
   onUpload: (files: FileList, visibility: Visibility, folder: string) => void
+  // A folder, with what's inside it; `read` collects the files.
+  onUploadFolder: (read: () => Promise<PickedFile[]>, visibility: Visibility, folder: string) => void
   onRename: (visibility: Visibility, path: string, title: string) => void
   onCreateFolder: (visibility: Visibility, parent: string, title: string) => void
   onDelete: (item: Item) => void
@@ -623,6 +740,7 @@ interface TreeShared {
   // Publish a draft, or Unpublish: move a published file back to draft.
   onSetStatus: (item: Item, status: 'published' | 'draft', title: string) => void
   onAskUpload: (visibility: Visibility, folder: string) => void
+  onAskUploadFolder: (visibility: Visibility, folder: string) => void
   onNewArticle: (visibility: Visibility, folder: string) => void
   onStatus: (text: string) => void
   onProblem: (text: string) => void
@@ -706,7 +824,10 @@ function Tree({ visibility, root, shared }: { visibility: Visibility; root: Fold
     clearDrop()
     if (!item && e.dataTransfer.files.length) {
       const folder = row ? (row.node.kind === 'folder' ? row.node.path : row.parent) : ''
-      shared.onUpload(e.dataTransfer.files, visibility, folder)
+      // Read the entries now: the browser empties dataTransfer once this returns.
+      const entries = droppedEntries(e.dataTransfer)
+      if (entries.some((entry) => entry.isDirectory)) shared.onUploadFolder(() => readDropped(entries), visibility, folder)
+      else shared.onUpload(e.dataTransfer.files, visibility, folder)
       return
     }
     if (!item || !current || current.problem) {
@@ -755,6 +876,11 @@ function Tree({ visibility, root, shared }: { visibility: Visibility; root: Fold
               <UploadIcon size={15} />
             </Button>
           </Tooltip>
+          <Tooltip content="Upload a folder, keeping its folders">
+            <Button variant="ghost" size="icon-sm" aria-label={`Upload a folder to ${meta.title}`} onClick={() => shared.onAskUploadFolder(visibility, '')}>
+              <FolderUploadIcon size={15} />
+            </Button>
+          </Tooltip>
         </div>
       </div>
 
@@ -774,7 +900,7 @@ function Tree({ visibility, root, shared }: { visibility: Visibility; root: Fold
         ))}
         {rows.length === 0 && newFolderHere === null && (
           <li className="px-4 py-8 text-center text-sm text-muted-foreground">
-            {filter ? 'Nothing matches the filter.' : visibility === 'public' ? 'No articles yet. Write one, or drop Markdown files here.' : 'No notes yet. Write one, or drop .md or .txt files here.'}
+            {filter ? 'Nothing matches the filter.' : visibility === 'public' ? 'No articles yet. Write one, or drop Markdown files or a folder here.' : 'No notes yet. Write one, or drop .md or .txt files or a folder here.'}
           </li>
         )}
       </ul>
@@ -830,6 +956,9 @@ function TreeRow({
             ? [{ label: 'New subfolder', icon: <FolderPlusIcon size={15} />, onSelect: () => (shared.toggle(row.key, true), shared.setEditing({ kind: 'new-folder', visibility, parent: node.path })) }]
             : []),
           { label: 'Upload files here', icon: <UploadIcon size={15} />, onSelect: () => shared.onAskUpload(visibility, node.path) },
+          ...(depth + 1 < MAX_DEPTH
+            ? [{ label: 'Upload a folder here', icon: <FolderUploadIcon size={15} />, onSelect: () => shared.onAskUploadFolder(visibility, node.path) }]
+            : []),
           'separator',
           { label: 'Rename', icon: <PencilIcon size={15} />, onSelect: () => shared.setEditing({ kind: 'rename', key: row.key }) },
           'separator',

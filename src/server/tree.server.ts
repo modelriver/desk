@@ -29,6 +29,7 @@ import {
   type ArticleFields,
   type ArticleStatus,
 } from '../lib/article-file.ts'
+import { foldersFor } from '../lib/folder-upload.ts'
 
 // Reading and changing the data folder as a tree of folders and files. Every
 // path goes through resolve(), which validates each part and refuses symlinks,
@@ -190,14 +191,17 @@ function publicSlugTaken(slug: string, except?: string): string | null {
 }
 
 // A public folder and an article beside it can't share a name: both would be
-// /help/<folder>/<name>. True when `name` is taken as either in that folder.
-function urlTaken(visibility: Visibility, folderRel: string, name: string): boolean {
+// /help/<folder>/<name>. True when `name` is taken in that folder, by a folder
+// or an article, or only by one `kind` when given.
+function urlTaken(visibility: Visibility, folderRel: string, name: string, kind?: 'folder' | 'file'): boolean {
   if (visibility !== 'public') return false
-  return readTree('public', folderRel).children.some((c) => (c.kind === 'folder' ? c.name === name : c.slug === name))
+  return readTree('public', folderRel).children.some((c) => (!kind || c.kind === kind) && (c.kind === 'folder' ? c.name === name : c.slug === name))
 }
 
+// A new folder clashes only with an article of its name, and an article only
+// with a folder: an article with its own name is the one being replaced.
 function assertUrlFree(visibility: Visibility, folderRel: string, name: string, what: 'folder' | 'article') {
-  if (urlTaken(visibility, folderRel, name)) {
+  if (urlTaken(visibility, folderRel, name, what === 'folder' ? 'file' : 'folder')) {
     throw new PathError(
       what === 'folder' ? `An article called “${name}” is already there, and they’d share a web address.` : `A folder called “${name}” is already there, and they’d share a web address.`,
     )
@@ -334,6 +338,64 @@ export function writeUpload(visibility: Visibility, folderRel: string, originalN
   fs.writeFileSync(abs, text)
   if (!existed) updateOrder(visibility, folderRel, (order) => placeInOrder(order, name, null))
   return rel
+}
+
+// One batch of a folder upload (see lib/folder-upload.ts): each file at the
+// path the plan gave it, creating the folders it needs with their titles and
+// merging into folders that already exist. Everything in the batch is checked
+// before anything is written. Returns how many files were written.
+export function writeUploadBatch(visibility: Visibility, files: Array<{ path: string; text: string }>, titles: Record<string, string>): number {
+  const seen = new Set<string>()
+  for (const file of files) {
+    const name = baseName(file.path)
+    if (Buffer.byteLength(file.text) > MAX_FILE_BYTES) throw new PathError(`${name} is over 1 MB.`)
+    if (file.text.includes('\u0000')) throw new PathError(`${name} does not look like a text file.`)
+    if (!ALLOWED_EXTENSIONS[visibility].includes(path.extname(name))) throw new PathError(`${name} isn’t a file type allowed here.`)
+    resolve(visibility, file.path, 'file')
+    if (seen.has(file.path)) throw new PathError(`${file.path} is in the upload twice.`)
+    seen.add(file.path)
+  }
+  const folders = foldersFor([...seen], titles)
+  const missing = folders.filter((f) => !fs.existsSync(resolve(visibility, f.path, 'folder')))
+  const creating = new Set(missing.map((f) => f.path))
+
+  if (visibility === 'public') {
+    const slugs = new Map<string, string>()
+    for (const { file } of walkFiles(readTree('public'))) slugs.set(file.slug, file.path)
+    const batchSlugs = new Map<string, string>()
+    for (const file of files) {
+      const slug = slugFromFilename(baseName(file.path))
+      const taken = slugs.get(slug)
+      if (taken && taken !== file.path) throw new PathError(`An article named “${slug}” already exists at ${taken}. Rename one of them first.`)
+      const twin = batchSlugs.get(slug)
+      if (twin) throw new PathError(`${twin} and ${file.path} would both be the article “${slug}”.`)
+      batchSlugs.set(slug, file.path)
+      // An article clashes only with a folder of its name. Looked up directly:
+      // reading the whole folder for every file is slow in big folders.
+      const asFolder = file.path.slice(0, -3)
+      if (creating.has(asFolder) || fs.statSync(path.join(rootDir(visibility), asFolder), { throwIfNoEntry: false })?.isDirectory()) {
+        throw new PathError(`${file.path} would share a web address with a folder of the same name.`)
+      }
+    }
+    for (const folder of missing) assertUrlFree(visibility, parentOf(folder.path), baseName(folder.path), 'folder')
+  }
+
+  // New names per folder, in order: folders first, then files. Each folder's
+  // order is written once for the batch.
+  const added = new Map<string, string[]>()
+  const add = (rel: string) => added.set(parentOf(rel), [...(added.get(parentOf(rel)) ?? []), baseName(rel)])
+  for (const folder of missing) {
+    fs.mkdirSync(resolve(visibility, folder.path, 'folder'))
+    writeMeta(resolve(visibility, folder.path, 'folder'), { title: folder.title.trim().slice(0, 60) || titleFromName(baseName(folder.path)) })
+    add(folder.path)
+  }
+  for (const file of files) {
+    const abs = resolve(visibility, file.path, 'file')
+    if (!fs.existsSync(abs)) add(file.path)
+    fs.writeFileSync(abs, file.text)
+  }
+  for (const [parent, names] of added) updateOrder(visibility, parent, (order) => names.reduce((o, name) => placeInOrder(o, name, null), order))
+  return files.length
 }
 
 export function readFile(visibility: Visibility, rel: string) {

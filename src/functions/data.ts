@@ -5,6 +5,7 @@ import { reloadContent } from '../server/content.server.ts'
 import * as tree from '../server/tree.server.ts'
 import { parseFrontMatter } from '../lib/front-matter.ts'
 import { helpPath, slugFromFilename, type Visibility } from '../lib/content-core.ts'
+import { BATCH_FILES, MAX_PICKED, planFolderUpload } from '../lib/folder-upload.ts'
 
 // The Data page and the article editor (admins only): the data folder as a
 // tree of folders and files. Every change rebuilds the help center and the
@@ -95,6 +96,69 @@ export const uploadFile = createServerFn({ method: 'POST' })
     requireUser('admin')
     const text = await data.file.text()
     return changed({ path: tree.writeUpload(data.visibility, data.folder, data.file.name, text), visibility: data.visibility })
+  })
+
+// --- Folder uploads (see lib/folder-upload.ts) ---
+
+// Checks a whole folder upload against the current tree without writing
+// anything: where each file goes, which folders get made, what's skipped, or
+// why it can't be uploaded. The browser then sends the files in batches.
+export const checkFolderUpload = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    const o = asObject(input)
+    if (!Array.isArray(o.entries) || o.entries.length > MAX_PICKED) throw new Error('entries is invalid.')
+    const entries = o.entries.map((e: unknown) => {
+      const entry = asObject(e)
+      if (typeof entry.path !== 'string' || entry.path.length > 1000) throw new Error('entries is invalid.')
+      if (typeof entry.size !== 'number' || !Number.isFinite(entry.size) || entry.size < 0) throw new Error('entries is invalid.')
+      return { path: entry.path, size: entry.size }
+    })
+    return { visibility: oneOf(o, 'visibility', VISIBILITIES), folder: relPath(o, 'folder'), entries }
+  })
+  .handler(({ data }) => {
+    requireUser('admin')
+    return planFolderUpload({
+      visibility: data.visibility,
+      target: data.folder,
+      entries: data.entries,
+      tree: tree.readTree(data.visibility),
+      allowed: tree.ALLOWED_EXTENSIONS[data.visibility],
+      maxBytes: tree.MAX_FILE_BYTES,
+    })
+  })
+
+// One batch of a checked folder upload: `path` and `file` entries in pairs,
+// plus the new folders' titles. Rebuilds the help center and the AI's index
+// once per batch, so what's live always matches what's on disk.
+export const uploadFolderBatch = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    if (!(input instanceof FormData)) throw new Error('Expected a file upload.')
+    const visibility = input.get('visibility')
+    if (visibility !== 'public' && visibility !== 'private') throw new Error('Choose public or private.')
+    const paths = input.getAll('path')
+    const files = input.getAll('file')
+    if (!files.length || files.length > BATCH_FILES || paths.length !== files.length) throw new Error('Invalid upload.')
+    const items = files.map((file, i) => {
+      const path = paths[i]
+      if (typeof path !== 'string' || path.length > 300) throw new Error('Invalid upload.')
+      if (!(file instanceof File) || file.size > tree.MAX_FILE_BYTES) throw new Error('Files must be 1 MB or smaller.')
+      return { path, file }
+    })
+    let titles: Record<string, string> = {}
+    try {
+      const parsed = JSON.parse(String(input.get('titles') ?? '{}')) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        titles = Object.fromEntries(Object.entries(parsed).filter((e): e is [string, string] => typeof e[1] === 'string').slice(0, 1000))
+      }
+    } catch {
+      throw new Error('Invalid upload.')
+    }
+    return { visibility: visibility as Visibility, items, titles }
+  })
+  .handler(async ({ data }) => {
+    requireUser('admin')
+    const files = await Promise.all(data.items.map(async (item) => ({ path: item.path, text: await item.file.text() })))
+    return changed({ files: tree.writeUploadBatch(data.visibility, files, data.titles) })
   })
 
 // One file for the dashboard preview. Markdown is split here so the browser
