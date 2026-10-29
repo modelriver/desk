@@ -16,8 +16,11 @@ export const env = {
   clientIpHeader: (process.env.CLIENT_IP_HEADER ?? '').trim().toLowerCase(),
   // Site-wide caps on visitor chat messages, whatever IP they come from, so a
   // distributed flood can't run up unlimited model spend. 0 disables a cap.
-  globalMessagesPerMinute: intEnv('GLOBAL_MESSAGES_PER_MINUTE', 60),
-  globalMessagesPerDay: intEnv('GLOBAL_MESSAGES_PER_DAY', 2000),
+  // The defaults fit ModelRiver's Free plan: 30 API calls a minute per IP
+  // (every Desk call to ModelRiver counts, so answers get 20 of them) and
+  // 25,000 AI requests a month (800 a day × 31 days stays under it).
+  globalMessagesPerMinute: intEnv('GLOBAL_MESSAGES_PER_MINUTE', 20),
+  globalMessagesPerDay: intEnv('GLOBAL_MESSAGES_PER_DAY', 800),
   // How long a visitor's chat is remembered after their last message (0 = until the browser closes).
   visitorCookieDays: intEnv('VISITOR_COOKIE_DAYS', 30),
   // Turns off the authenticator-code step at sign-in, for everyone. Meant for

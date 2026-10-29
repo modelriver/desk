@@ -433,7 +433,7 @@ The chat widget is public and every answer costs model tokens, so the app limits
 | --- | --- |
 | New conversations | 20 per hour per IP, 1,000 per hour site-wide |
 | Messages | 20 per 10 min per conversation, 60 per 10 min per IP |
-| AI answers, site-wide | `GLOBAL_MESSAGES_PER_MINUTE` (default 60) and `GLOBAL_MESSAGES_PER_DAY` (default 2,000) |
+| AI answers, site-wide | `GLOBAL_MESSAGES_PER_MINUTE` (default 20) and `GLOBAL_MESSAGES_PER_DAY` (default 800); see [Matching your ModelRiver plan](#matching-your-modelriver-plan) |
 | Conversation reloads (live updates, or polling when not live) | 30 per minute per conversation, 120 per minute per IP; each session is cached for 2 s, so a burst costs at most one ModelRiver call |
 | Live-update tokens | 20 per 10 min per conversation, 60 per 10 min per IP (each reconnection asks for one) |
 | Stream reconnects | 10 per minute per conversation |
@@ -446,6 +446,12 @@ The chat widget is public and every answer costs model tokens, so the app limits
 - **Visitor caps.** The site-wide caps apply only to AI answers. A visitor can still message a team member who has taken over.
 - **One process.** Limits live in memory, reset on restart and aren't shared between processes. Run one instance, or move `src/server/rate-limit.server.ts` to a shared store.
 - **Login lock-out.** The per-account sign-in limit means someone who knows an admin's email can briefly lock them out. That's the usual trade-off for stopping credential stuffing.
+
+### Matching your ModelRiver plan
+
+The default site-wide caps fit ModelRiver's Free plan. Every call Desk makes to ModelRiver comes from your server's one IP, and on Free that IP gets 30 calls a minute and 600 an hour. That covers AI answers, team replies, live-update tokens and the widget's conversation reloads, so AI answers get 20 a minute and the rest is left for everything else. Free also includes 25,000 AI requests a month for your whole organization, and 800 answers a day stays under that for any month. That's roughly 8,000 conversations a month at about three answers each.
+
+A chat that reaches Desk's cap is handed to your team, and everything else keeps working. Going over ModelRiver's limit instead refuses every call from your server for the rest of that minute or hour: team replies, live updates and the visitor's message to the team as well as AI answers. That's why the caps sit below the plan's limits. On a paid plan, raise both caps to match it: for example, allow your monthly requests divided by 31 per day. If other projects in your organization use ModelRiver too, leave room for them, since the monthly requests are shared.
 
 ### Tell the app the real client IP
 
