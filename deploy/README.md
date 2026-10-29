@@ -17,7 +17,7 @@ sudo ./deploy/setup-server.sh --source . \
 
 `--email` is for the certificate; passing it accepts the [Let's Encrypt terms](https://letsencrypt.org/repository/). The script asks for your ModelRiver API key without showing it on screen. You can pass `MODELRIVER_API_KEY` in the environment instead, but a key typed on the command line stays in your shell history. In a terminal, the script then asks for the first admin's email, name and password (or set `ADMIN_EMAIL`, `ADMIN_NAME` and `ADMIN_PASSWORD`).
 
-Once `@modelriver/client` 1.7.0 is on npm you can skip the copy and let the script clone the repository: leave out `--source` (and pass `--repo`/`--branch` for a fork).
+Or skip the copy and let the script clone the repository: leave out `--source` (and pass `--repo`/`--branch` for a fork).
 
 | Where | What |
 | --- | --- |
@@ -75,6 +75,64 @@ Make the secrets once: never change `DESK_SECRET_KEY` afterwards, or connector k
 - **One container only.** Rate limits live in memory and the database is one file, so don't scale `desk` beyond one.
 - **Your own `.env`.** In a checkout you also develop in, `.env` holds your development settings; run Docker from a separate folder.
 - **Releases:** pushing a version tag that matches `package.json` (`git tag v1.0.1 && git push origin v1.0.1`) publishes the image; see `.github/workflows/docker.yml`.
+
+## Hosting platforms
+
+Any platform that runs a Docker image with a persistent disk can run Desk: one instance, the disk mounted at `/data`, port 3000. The platform handles HTTPS. Configs for three of them are in this repo.
+
+Desk needs a disk that survives restarts, since everything it keeps is in `/data`. Platforms without one don't fit as they are: Cloudflare Containers (the disk is reset when a container sleeps), Vercel and other serverless functions. Running there would mean moving the database to a hosted one and the in-memory parts (search index, rate limits, timers) to shared services.
+
+After the first deploy on any platform: import `examples/support_assistant.workflow.json` in the ModelRiver console, create the first admin (below), and set `APP_URL` to the address you use (it's for links in emails and the sitemap).
+
+### Fly.io
+
+[`fly.toml`](../fly.toml) runs one machine with a 1 GB volume. With [flyctl](https://fly.io/docs/flyctl/install/) signed in, in an empty folder:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/modelriver/desk/main/fly.toml
+fly launch --copy-config --no-deploy --name your-desk
+fly secrets set MODELRIVER_API_KEY=... \
+  DESK_SECRET_KEY="$(openssl rand -base64 32)" \
+  DESK_IDENTITY_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
+fly deploy --ha=false
+fly ssh console --pty -C "desk-entrypoint node /app/scripts/create-admin.ts"
+```
+
+It's at `https://your-desk.fly.dev`; add your own domain with `fly certs add`. `--ha=false` keeps it to one machine, which Desk needs. Set `APP_URL` with `fly secrets set APP_URL=https://...`.
+
+### Render
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/modelriver/desk)
+
+The button reads [`render.yaml`](../render.yaml): a web service from the published image with a 1 GB disk. It asks for your ModelRiver API key and makes the two secrets. A disk needs a paid instance type (Starter or above). Create the first admin from the service's **Shell** tab:
+
+```bash
+desk-entrypoint node /app/scripts/create-admin.ts
+```
+
+Add `APP_URL` under **Environment** once you know the address.
+
+### Railway
+
+1. **New → Docker Image**, `ghcr.io/modelriver/desk:1`.
+2. Add a volume mounted at `/data`.
+3. Variables: `MODELRIVER_API_KEY`, `DESK_SECRET_KEY` (`openssl rand -base64 32`), `DESK_IDENTITY_SECRET` (`openssl rand -base64 48`), `CLIENT_IP_HEADER=x-real-ip`, and `RAILWAY_RUN_UID=0`. Railway mounts volumes owned by root; with that variable Desk starts as root, takes over `/data`, and runs as an unprivileged user.
+4. Under **Networking**, generate a domain, or add your own, on port 3000.
+5. Create the first admin from the service's SSH console with `desk-entrypoint node /app/scripts/create-admin.ts`.
+
+### Updating
+
+Updates never touch your data. Database changes run on their own when the new version starts. Back up `/data` before a big jump; going back to an older version after one isn't supported.
+
+| Where | Update now | Automatically |
+| --- | --- | --- |
+| Docker Compose | `docker compose pull && docker compose up -d` | A cron entry, e.g. weekly: `0 4 * * 1 cd /path/to/desk && docker compose pull -q && docker compose up -d` |
+| Fly.io | `fly deploy` (pulls the newest image for the tag in `fly.toml`) | A scheduled job that runs `fly deploy`, e.g. a GitHub Action with a `FLY_API_TOKEN` |
+| Render | **Manual Deploy → Deploy latest reference** | Call the service's deploy hook URL (Settings) from a scheduled job |
+| Railway | **Redeploy** | **Settings → Image Auto Updates**: patches or minor versions, in a window you choose (e.g. weekends) |
+| systemd | Run `setup-server.sh` again with the same options | A cron entry running it |
+
+The `1` tag moves to every 1.x release; a new major version (2.x) never arrives on its own. To stay on one exact version, use its full tag (`1.0.0`) instead.
 
 ## By hand (systemd)
 

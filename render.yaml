@@ -1,0 +1,33 @@
+# Desk on Render: the published image with a persistent disk for its data.
+# Render handles HTTPS. Deploy it from the "Deploy to Render" button in the
+# README, or as a Blueprint from your fork; see deploy/README.md ("Render").
+#
+# A disk needs a paid instance type (starter or above) and keeps Desk to one
+# instance, which is what it needs anyway.
+
+services:
+  - type: web
+    name: desk
+    runtime: image
+    image:
+      # 1 follows every 1.x release; pin one with e.g. ghcr.io/modelriver/desk:1.0.0.
+      url: ghcr.io/modelriver/desk:1
+    plan: starter
+    healthCheckPath: /robots.txt
+    disk:
+      name: desk-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: MODELRIVER_API_KEY
+        sync: false
+      # Made once on the first deploy. Never change DESK_SECRET_KEY afterwards:
+      # connector keys saved on the Integrations page can't be read without it.
+      - key: DESK_SECRET_KEY
+        generateValue: true
+      - key: DESK_IDENTITY_SECRET
+        generateValue: true
+      # Render's edge (Cloudflare) puts the visitor's address in this header;
+      # Desk rate-limits by it.
+      - key: CLIENT_IP_HEADER
+        value: true-client-ip

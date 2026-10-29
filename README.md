@@ -507,6 +507,12 @@ curl -fsSL https://raw.githubusercontent.com/modelriver/desk/main/deploy/docker/
 docker compose up -d
 ```
 
+Or on a hosting platform with a persistent disk: [Fly.io](deploy/README.md#flyio) (`fly.toml`), [Render](deploy/README.md#render) (`render.yaml`) or [Railway](deploy/README.md#railway).
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/modelriver/desk)
+
+Updating is one command, or automatic on Railway; see [Updating](deploy/README.md#updating).
+
 See [`deploy/README.md`](deploy/README.md) for the options and what goes where. By hand, in short:
 
 1. Put the app in `/opt/desk` and your data in `/var/lib/desk/data/{public,private}`.

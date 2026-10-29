@@ -36,7 +36,9 @@ COPY --from=build /app/examples ./examples
 COPY --chmod=755 deploy/docker/entrypoint.sh /usr/local/bin/desk-entrypoint
 # A new named volume starts with this folder's owner, so Desk can write to it.
 RUN mkdir -p /data && chown node:node /data
-USER node
+# No USER here: hosts like Railway and Render mount their volumes owned by
+# root, so the entrypoint starts as root, hands /data to the node user and
+# runs Desk as node. docker-compose.yml starts it as node directly.
 VOLUME /data
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

@@ -40,17 +40,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Start it and wait until it's healthy
+      # Two ways it gets started: as root on a root-owned volume (Railway,
+      # Render, Fly), and as node with no capabilities (docker-compose.yml).
+      - name: Start it both ways and wait until each is healthy
         run: |
-          docker run -d --name desk -e DESK_SAMPLE_DATA=true desk:check
-          for i in $(seq 1 30); do
-            status=$(docker inspect -f '{{.State.Health.Status}}' desk)
-            [ "$status" = healthy ] && { echo "healthy after ${i}0 s"; exit 0; }
-            [ "$(docker inspect -f '{{.State.Running}}' desk)" = true ] || break
-            sleep 10
-          done
-          docker logs desk
-          exit 1
+          wait_healthy() {
+            for i in $(seq 1 30); do
+              status=$(docker inspect -f '{{.State.Health.Status}}' "$1")
+              [ "$status" = healthy ] && { echo "$1 healthy after ${i}0 s"; return 0; }
+              [ "$(docker inspect -f '{{.State.Running}}' "$1")" = true ] || break
+              sleep 10
+            done
+            docker logs "$1"
+            return 1
+          }
+          docker volume create rootvol
+          docker run --rm -v rootvol:/data --entrypoint sh desk:check -c 'chown root:root /data && chmod 755 /data'
+          docker run -d --name as-root -v rootvol:/data -e DESK_SAMPLE_DATA=true desk:check
+          docker run -d --name as-node --user node --cap-drop ALL --security-opt no-new-privileges desk:check
+          wait_healthy as-root
+          wait_healthy as-node
+          # Desk itself must run as node, and own its data, even when started as root.
+          [ "$(docker exec as-root sh -c "awk '/^Uid:/ {print \$2}' /proc/1/status")" = 1000 ]
+          [ -z "$(docker exec as-root find /data ! -user node)" ]
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')

@@ -4,7 +4,16 @@
 # - DESK_SAMPLE_DATA=true copies the example articles into an empty data folder.
 # - Keeps support.config.json (your branding, and any logo next to it) on the
 #   volume, so rebuilding the image doesn't replace it.
+# - Started as root (the image's default), gives /data to the node user and
+#   runs everything as node.
 set -eu
+
+if [ "$(id -u)" = 0 ]; then
+  # Volumes some hosts mount are owned by root, and a command run as root
+  # (e.g. over SSH) can leave root-owned files behind; Desk must own them all.
+  find /data ! -user node -exec chown node:node {} +
+  exec setpriv --reuid=node --regid=node --init-groups -- /usr/local/bin/desk-entrypoint "$@"
+fi
 
 mkdir -p "$DATA_DIR/public" "$DATA_DIR/private"
 
