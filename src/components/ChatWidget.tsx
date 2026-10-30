@@ -981,7 +981,7 @@ export function ChatWidget({
                 rows={1}
                 maxLength={4000}
                 aria-label="Message"
-                className="max-h-32 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm outline-none placeholder:text-muted-foreground [field-sizing:content]"
+                className="max-h-32 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-base outline-none placeholder:text-muted-foreground [field-sizing:content] sm:text-sm"
               />
               <Button type="submit" size="icon-sm" className="rounded-lg" disabled={busy || !input.trim()} aria-label="Send message">
                 <BusyIcon busy={busy} size={15} idle={<ArrowUpIcon size={16} />} />
@@ -1100,7 +1100,7 @@ function VerifyCard({
             aria-label="Your email"
             maxLength={254}
             required
-            className="h-8 text-sm"
+            className="h-8"
           />
           <Button type="submit" size="sm" disabled={busy || !email.trim()}>
             <BusyIcon busy={busy} size={14} />

@@ -6,8 +6,11 @@
 #
 #   sudo ./deploy/setup-server.sh --source . --domain support.acme.com --email you@acme.com
 #
-# Run it again to update: it fetches the app, rebuilds and restarts, and keeps
-# your settings, secrets, data and nginx config.
+# To update afterwards, run `sudo desk-update` (deploy/update.sh, installed
+# by this script): it backs up, builds beside the running app and goes back
+# if the new version doesn't start. Running this script again also works: it
+# fetches the app, rebuilds and restarts, and keeps your settings, secrets,
+# data and nginx config.
 #
 # Run with --help for every option.
 
@@ -19,6 +22,8 @@ DATA_DIR="$STATE_DIR/data"
 DB_PATH="$STATE_DIR/desk.db"
 CONFIG_DIR=/etc/desk
 ENV_FILE="$CONFIG_DIR/env"
+SETUP_CONF="$CONFIG_DIR/setup.conf"
+UPDATE_BIN=/usr/local/bin/desk-update
 NPM_CACHE=/var/cache/desk-npm
 NODE_ROOT=/usr/local/lib/nodejs
 NGINX_SITE=/etc/nginx/sites-available/desk
@@ -365,6 +370,12 @@ if [ "$DRY_RUN" = 0 ]; then
   note "Desk is running on 127.0.0.1:$PORT."
 fi
 
+# desk-update, and where it gets releases from (a fork, when --repo names one).
+run install -m 755 "$APP_DIR/deploy/update.sh" "$UPDATE_BIN"
+if [ "$DRY_RUN" = 0 ]; then
+  printf '# Written by deploy/setup-server.sh for desk-update.\nREPO=%s\n' "$REPO" >"$SETUP_CONF"
+fi
+
 # --- 8. First admin ---
 
 if [ "$DRY_RUN" = 0 ]; then
@@ -478,5 +489,5 @@ fi
 note "Settings:     sudoedit $ENV_FILE, then sudo systemctl restart desk"
 note "Your data:    $DATA_DIR (back up all of $STATE_DIR)"
 note "Logs:         journalctl -u desk -f"
-note "Update:       run this script again with the same options"
+note "Update:       sudo desk-update (sudo desk-update --check to see what's new)"
 note "Also import examples/support_assistant.workflow.json in the ModelRiver console and publish it."

@@ -53,8 +53,10 @@ export function Button({ variant = 'default', size = 'default', className, type 
   return <button type={type} className={buttonClass(variant, size, className)} {...props} />
 }
 
+// 16 px text on phones: iOS Safari zooms into a field with smaller text on
+// focus and doesn't zoom back out. 14 px from the sm breakpoint up.
 const field =
-  'w-full rounded-md border border-input bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground ' +
+  'w-full rounded-md border border-input bg-card px-3 text-base text-foreground placeholder:text-muted-foreground sm:text-sm ' +
   'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring disabled:opacity-50'
 
 // ComponentProps includes ref, which React 19 passes through as a normal prop.

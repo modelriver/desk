@@ -10,6 +10,8 @@ A small, self-hostable support app:
 - **Team dashboard.** Sign in, read every conversation, take over from the AI and reply as a human, manage users (admin/agent) and upload data files. Admins also get a **Settings** page to change the logo, colours, fonts, page titles, description and favicon, and showing whether the AI is connected, how much of the AI budget is used, who hasn't set up two-factor, whether the proxy settings look right, and where each setting comes from.
 - **Pause the chat.** **Settings → Chat assistant** turns the chat off for visitors at once, with no restart: the chat button, the home page's question box and the articles' "Still stuck?" box disappear, the embeddable `/widget` shows a short "Chat is paused" note with a link to the articles, and new chats and messages are refused. Articles and search keep working. Who changed it, and when, shows there and in the admin audit log.
 
+![The Desk dashboard and a visitor's chat showing the same reply](https://cdn.modelriver.com/assets/docs/desk-live-light.webp)
+
 It is a reference app for ModelRiver, not a full CRM. ModelRiver does the heavy lifting (model gateway, retries and fallbacks, streaming, conversation sessions), so this repo stays small.
 
 ## Quick start
@@ -132,6 +134,10 @@ Browser ──(server functions)──▶ This app ──(API key)──▶ Mode
 4. ModelRiver keeps the conversation history in the session. Only the visitor's question and the answer go into session memory, not the excerpts.
 5. When a team member takes over, their replies and the visitor's next messages go to the session through `POST /v1/sessions/:id/messages`, and the AI stays quiet until someone hands back.
 6. Everything is live. The open widget and the open dashboard transcript each follow the conversation over ModelRiver's session channel (`POST /v1/sessions/:id/subscribe`, then `subscribeToSession` from `@modelriver/client`). New messages arrive as they're stored, and Desk's own changes (a teammate taking over, handing back, archiving, the visitor leaving) go out as a signal (`POST /v1/sessions/:id/signals`), so a reply shows up within a second instead of on the next poll. Each view reloads the conversation when it (re)connects, keeps a once-a-minute safety refresh, and polls as before if it can't connect.
+
+The bot in the widget shows what it's doing: **online** while it waits, **listening** while the visitor types, **thinking** while it writes, **solved** when it has answered, and **stepping aside** when it passes the chat to your team.
+
+![The Desk bot's five moods: online, listening, thinking, solved and stepping aside](https://cdn.modelriver.com/assets/docs/desk-moods-light.webp)
 
 ### Talking to a person
 

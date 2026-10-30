@@ -28,7 +28,20 @@ Or skip the copy and let the script clone the repository: leave out `--source` (
 
 Options: `--sample-data` starts with the example articles, `--firewall` turns on ufw (SSH, HTTP and HTTPS only), `--no-tls` or `--no-nginx` if you terminate HTTPS elsewhere, `--port`, `--node-version`, and `--dry-run` to see every command first. `--help` lists them all.
 
-**Updating.** Run the script again with the same options. It fetches the app, rebuilds, restarts, and keeps `/etc/desk/env`, your data and the nginx config. To regenerate the nginx config, delete `/etc/nginx/sites-available/desk` first.
+**Updating.** The script installs `desk-update` (from `deploy/update.sh`):
+
+```bash
+sudo desk-update --check      # what's installed, and what's out
+sudo desk-update              # the newest release of the major version you run
+sudo desk-update 1.1.1        # a given release, newer or older
+sudo desk-update --rollback   # back to the version before the last update
+```
+
+It saves `/var/lib/desk` and `/etc/desk` to `/var/backups/desk` first (with a consistent copy of the database; the last 3 are kept), builds the new release in `/opt/desk.next` while the current one keeps running, then switches over and restarts, a few seconds of downtime. If the new version doesn't answer within 30 seconds it switches back on its own. A new major version waits until you name it. Settings, data, nginx and HTTPS aren't touched. Releases come from the repository you installed from (`--repo`, saved in `/etc/desk/setup.conf`).
+
+To restore a backup: `sudo tar -xzf /var/backups/desk/FILE.tgz -C /`, then move the `desk.db` copy at the top of the archive to `/var/lib/desk/desk.db` (with Desk stopped).
+
+Running the setup script again also still works, with the same options: it fetches the app, rebuilds in place, restarts, and keeps `/etc/desk/env`, your data and the nginx config. To regenerate the nginx config, delete `/etc/nginx/sites-available/desk` first. An install from before `desk-update` gets it by running the script once more.
 
 **After setup**
 
@@ -130,7 +143,7 @@ Updates never touch your data. Database changes run on their own when the new ve
 | Fly.io | `fly deploy` (pulls the newest image for the tag in `fly.toml`) | A scheduled job that runs `fly deploy`, e.g. a GitHub Action with a `FLY_API_TOKEN` |
 | Render | **Manual Deploy → Deploy latest reference** | Call the service's deploy hook URL (Settings) from a scheduled job |
 | Railway | **Redeploy** | **Settings → Image Auto Updates**: patches or minor versions, in a window you choose (e.g. weekends) |
-| systemd | Run `setup-server.sh` again with the same options | A cron entry running it |
+| systemd | `sudo desk-update` | A root cron entry, e.g. weekly: `0 4 * * 1 /usr/local/bin/desk-update` |
 
 The `1` tag moves to every 1.x release; a new major version (2.x) never arrives on its own. To stay on one exact version, use its full tag (`1.0.0`) instead.
 
