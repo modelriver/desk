@@ -245,15 +245,18 @@ if [ -f "$DB_PATH" ]; then
     "$DB_PATH" "$SNAP/$DB_NAME" || die "Couldn't copy the database for the backup; nothing was changed."
 fi
 # Inside: var/lib/desk/ (without the live database), etc/desk/ and the
-# database copy at the top. Restore with: tar -xzf FILE -C /, then move
-# the database copy to DATABASE_PATH.
+# database copy at the top, as desk.db. Only that file from the scratch
+# folder, never "./": unpacked over / its permissions would land on / itself.
+# Restore by unpacking into an empty folder and copying back (deploy/README.md).
 STATE_REL="${STATE_DIR#"$ROOT"/}"
+DB_COPY=()
+[ -f "$SNAP/$DB_NAME" ] && DB_COPY=(-C "$SNAP" "$DB_NAME")
 (
   umask 077
   tar -czf "$BACKUP" \
     --exclude="$STATE_REL/$DB_NAME" --exclude="$STATE_REL/$DB_NAME-wal" --exclude="$STATE_REL/$DB_NAME-shm" \
     -C "${ROOT:-/}" "$STATE_REL" "${CONFIG_DIR#"$ROOT"/}" \
-    -C "$SNAP" .
+    ${DB_COPY[@]+"${DB_COPY[@]}"}
 )
 rm -rf "$SNAP"
 note "Saved your data and settings to $BACKUP."

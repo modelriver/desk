@@ -5,6 +5,7 @@ import {
   checkFolderUpload,
   createDataFolder,
   deleteDataItem,
+  deleteDataItems,
   getDataTree,
   moveDataItem,
   renameDataFolder,
@@ -223,6 +224,7 @@ function DataPage() {
   const makeFolder = useServerFn(createDataFolder)
   const rename = useServerFn(renameDataFolder)
   const remove = useServerFn(deleteDataItem)
+  const removeMany = useServerFn(deleteDataItems)
   const upload = useServerFn(uploadFile)
   const checkUpload = useServerFn(checkFolderUpload)
   const uploadBatch = useServerFn(uploadFolderBatch)
@@ -236,7 +238,8 @@ function DataPage() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   // Everything, or only drafts (to review and publish them).
   const [show, setShow] = useState<'all' | 'drafts'>('all')
-  const [bulk, setBulk] = useState<'published' | 'draft' | null>(null)
+  // A bulk action waiting for its confirmation.
+  const [bulk, setBulk] = useState<'published' | 'draft' | 'delete' | null>(null)
   // A public folder's card (description and icon) being edited.
   const [details, setDetails] = useState<Folder | null>(null)
   const [filter, setFilter] = useState('')
@@ -265,8 +268,9 @@ function DataPage() {
   const selectedDrafts = selection.filter((f) => f.draft)
   const selectedLive = selection.filter((f) => !f.draft)
   // What the confirmation acts on, and the rest of the selection it leaves alone.
-  const bulkFiles = bulk === 'published' ? selectedDrafts : selectedLive
-  const bulkOthers = bulk === 'published' ? selectedLive.length : selectedDrafts.length
+  // Delete takes everything selected, drafts and published alike.
+  const bulkFiles = bulk === 'delete' ? selection : bulk === 'published' ? selectedDrafts : selectedLive
+  const bulkOthers = bulk === 'delete' ? 0 : bulk === 'published' ? selectedLive.length : selectedDrafts.length
   const allDrafts = useMemo(() => draftKeys(data, filter.trim().toLowerCase()), [data, filter])
   const selectKeys = (keys: string[]) => setSelected((s) => toggleKeys(s, keys))
   const clearSelection = () => setSelected(new Set())
@@ -407,6 +411,17 @@ function DataPage() {
       }
       selectUploaded(drafts)
       return { text: uploadedMessage(list.length === 1 ? list[0]!.name : `${list.length} files`, list.length, drafts.length) }
+    })
+  }
+
+  // Delete everything selected, after the confirmation.
+  const applyDelete = () => {
+    const files = selection
+    void run(async () => {
+      const { deleted } = await removeMany({ data: { items: files.map(({ visibility, path }) => ({ visibility, path })) } })
+      setBulk(null)
+      clearSelection()
+      return { text: `Deleted ${deleted} ${nounFor(files, deleted)}.` }
     })
   }
 
@@ -662,6 +677,10 @@ function DataPage() {
                   Clear
                 </Button>
               </Tooltip>
+              <Button variant="ghost-destructive" size="sm" onClick={() => setBulk('delete')} disabled={busy}>
+                <TrashIcon size={14} />
+                Delete {selection.length}
+              </Button>
               {selectedLive.length > 0 && (
                 <Button variant="outline" size="sm" onClick={() => setBulk('draft')} disabled={busy}>
                   <EyeOffIcon size={14} />
@@ -838,17 +857,23 @@ function DataPage() {
         open={bulk !== null}
         tone={bulk === 'published' ? 'primary' : 'destructive'}
         busy={busy}
-        title={`${bulk === 'published' ? 'Publish' : 'Unpublish'} ${bulkFiles.length} ${nounFor(bulkFiles)}?`}
-        icon={bulk === 'published' ? <SendIcon size={18} /> : <EyeOffIcon size={18} />}
+        title={`${bulk === 'published' ? 'Publish' : bulk === 'delete' ? 'Delete' : 'Unpublish'} ${bulkFiles.length} ${nounFor(bulkFiles)}?`}
+        icon={bulk === 'published' ? <SendIcon size={18} /> : bulk === 'delete' ? <TrashIcon size={18} /> : <EyeOffIcon size={18} />}
         items={bulkFiles.map((f) => f.title)}
         note={bulkOthers > 0 ? `The ${bulkOthers} ${bulk === 'published' ? 'already published' : `draft${bulkOthers === 1 ? '' : 's'}`} in your selection stay${bulkOthers === 1 ? 's' : ''} as ${bulkOthers === 1 ? 'it is' : 'they are'}.` : undefined}
-        confirmLabel={bulk === 'published' ? `Publish ${selectedDrafts.length}` : `Unpublish ${selectedLive.length}`}
+        confirmLabel={bulk === 'published' ? `Publish ${selectedDrafts.length}` : bulk === 'delete' ? `Delete ${selection.length}` : `Unpublish ${selectedLive.length}`}
         onClose={() => setBulk(null)}
-        onConfirm={() => bulk && applyBulk(bulk)}
+        onConfirm={() => (bulk === 'delete' ? applyDelete() : bulk && applyBulk(bulk))}
       >
         {(() => {
           const one = bulkFiles.length === 1
           const anyPublic = bulkFiles.some((f) => f.visibility === 'public')
+          if (bulk === 'delete') {
+            const live = bulkFiles.filter((f) => !f.draft && f.visibility === 'public').length
+            const off =
+              live === bulkFiles.length ? `${one ? 'It comes' : 'They come'} off the help center. ` : live ? `${live === 1 ? 'The published one comes' : `The ${live} published ones come`} off the help center. ` : ''
+            return `${off}The AI stops using ${one ? 'it' : 'them'}. This can’t be undone.`
+          }
           if (bulk === 'published') {
             return anyPublic
               ? `${one ? 'It goes' : 'They go'} live on the help center, and the AI starts answering from ${one ? 'it' : 'them'}.`

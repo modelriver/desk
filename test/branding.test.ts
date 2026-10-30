@@ -67,7 +67,26 @@ test('a brand colour gives readable accents in both themes', () => {
   }
   assert.equal(readableOn('#ffffff'), '#111111')
   assert.equal(readableOn('#111111'), '#ffffff')
+  // Mid-tone colours where WCAG alone would pick black but white reads better.
+  for (const hex of ['#059669', '#e0582f', '#238a92']) assert.equal(readableOn(hex), '#ffffff', hex)
+  // Light ones keep dark text, and white is never picked below 3:1.
+  for (const hex of ['#f5c518', '#22c55e', '#f97316']) assert.equal(readableOn(hex), '#111111', hex)
   assert.equal(lightAccents('#1F6FEB').primary, '#1f6feb')
+  // Every brand colour, black and white included, gives a button that stands
+  // out from the page in both modes (the themes' backgrounds).
+  for (const hex of ['#000000', '#ffffff', '#808080', '#111111', '#fafafa', '#fff8c4', '#238a92', '#1c1917']) {
+    assert.ok(contrast(lightAccents(hex).primary, '#fbfaf8') >= 1.5, `${hex}: light-mode button on the page`)
+    assert.ok(contrast(darkAccents(hex).primary, '#161615') >= 3, `${hex}: dark-mode button on the page`)
+  }
+  // Black, white and grey are monochrome: ink buttons, near-white in dark mode.
+  assert.deepEqual([lightAccents('#000000').primary, darkAccents('#000000').primary], ['#111111', '#f2f2f2'])
+  assert.deepEqual([lightAccents('#ffffff').primary, darkAccents('#ffffff').primary], ['#111111', '#f2f2f2'])
+  assert.equal(darkAccents('#000000').primaryForeground, '#111111')
+  // A pale colour is deepened so it shows on white.
+  assert.notEqual(lightAccents('#fff8c4').primary, '#fff8c4')
+  // Vivid colours are calmed in dark mode instead of glowing.
+  assert.equal(darkAccents('#059669').primary, '#42d7a9')
+  assert.equal(darkAccents('#238a92').primary, '#46c8d3')
 })
 
 test('fonts load from Google Fonts with weights each family has', () => {

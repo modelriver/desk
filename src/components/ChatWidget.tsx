@@ -1326,9 +1326,14 @@ function ChatMessage({ message, known }: { message: UiMessage; known: Map<string
   return (
     <div className="flex gap-3">
       {isAgent ? (
-        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-success/15 text-success" aria-hidden="true">
-          <UserIcon size={13} />
-        </span>
+        // Their profile picture from Account settings, else a person icon.
+        message.authorAvatar ? (
+          <img src={message.authorAvatar} alt="" className="size-[26px] shrink-0 rounded-full object-cover" />
+        ) : (
+          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-success/15 text-success" aria-hidden="true">
+            <UserIcon size={13} />
+          </span>
+        )
       ) : message.streaming ? (
         <HelpBot mood="thinking" size={26} />
       ) : (

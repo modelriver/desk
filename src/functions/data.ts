@@ -8,6 +8,7 @@ import { helpPath, slugFromFilename, type Visibility } from '../lib/content-core
 import { BATCH_FILES, MAX_PICKED, MAX_UPLOAD_FILES, planFolderUpload } from '../lib/folder-upload.ts'
 import { isDraft } from '../lib/article-file.ts'
 import { MAX_FOLDER_DESCRIPTION } from '../lib/collection-icons.ts'
+import { PathError } from '../lib/tree-core.ts'
 
 // The Data page and the article editor (admins only): the data folder as a
 // tree of folders and files. Every change rebuilds the help center and the
@@ -78,6 +79,33 @@ export const deleteDataItem = createServerFn({ method: 'POST' })
   .handler(({ data }) => {
     requireUser('admin')
     return changed({ files: tree.deleteItem(data.visibility, data.path, data.kind) })
+  })
+
+// Several files at once, from the selection bar. A file someone else already
+// deleted is skipped rather than failing the rest.
+export const deleteDataItems = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    const o = asObject(input)
+    if (!Array.isArray(o.items) || !o.items.length || o.items.length > MAX_UPLOAD_FILES) throw new Error('items is invalid.')
+    return {
+      items: o.items.map((i: unknown) => {
+        const item = asObject(i)
+        return { visibility: oneOf(item, 'visibility', VISIBILITIES), path: relPath(item, 'path') }
+      }),
+    }
+  })
+  .handler(({ data }) => {
+    requireUser('admin')
+    let deleted = 0
+    for (const item of data.items) {
+      try {
+        tree.deleteItem(item.visibility, item.path, 'file')
+        deleted++
+      } catch (err) {
+        if (!(err instanceof PathError)) throw err
+      }
+    }
+    return changed({ deleted })
   })
 
 export const moveDataItem = createServerFn({ method: 'POST' })

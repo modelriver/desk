@@ -54,11 +54,12 @@ test('database migrates and enforces roles and modes', () => {
       'login_challenges',
       'recovery_codes',
       'usage_snapshots',
+      'user_avatars',
       'users',
       'visitor_codes',
     ],
   )
-  assert.deepEqual({ ...(db.prepare('PRAGMA user_version').get() as object) }, { user_version: 18 })
+  assert.deepEqual({ ...(db.prepare('PRAGMA user_version').get() as object) }, { user_version: 19 })
   assert.throws(() =>
     db
       .prepare("INSERT INTO conversations (id, visitor_token_hash, mode, created_at, last_activity_at, verified_via) VALUES ('v', 'h', 'ai', 'now', 'now', 'guess')")

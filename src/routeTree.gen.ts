@@ -18,6 +18,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as WidgetRouteImport } from './routes/widget'
 import { Route as ArticlesIndexRouteImport } from './routes/articles/index'
 import { Route as ArticlesSplatRouteImport } from './routes/articles/$'
+import { Route as AvatarsHashRouteImport } from './routes/avatars/$hash'
 import { Route as BrandAssetRouteImport } from './routes/brand/$asset'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as DashboardAccountRouteImport } from './routes/dashboard/account'
@@ -76,6 +77,11 @@ const ArticlesIndexRoute = ArticlesIndexRouteImport.update({
 const ArticlesSplatRoute = ArticlesSplatRouteImport.update({
   id: '/articles/$',
   path: '/articles/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AvatarsHashRoute = AvatarsHashRouteImport.update({
+  id: '/avatars/$hash',
+  path: '/avatars/$hash',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BrandAssetRoute = BrandAssetRouteImport.update({
@@ -158,6 +164,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/widget': typeof WidgetRoute
   '/articles/$': typeof ArticlesSplatRoute
+  '/avatars/$hash': typeof AvatarsHashRoute
   '/brand/$asset': typeof BrandAssetRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/archived': typeof DashboardArchivedRoute
@@ -182,6 +189,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/widget': typeof WidgetRoute
   '/articles/$': typeof ArticlesSplatRoute
+  '/avatars/$hash': typeof AvatarsHashRoute
   '/brand/$asset': typeof BrandAssetRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/archived': typeof DashboardArchivedRoute
@@ -208,6 +216,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/widget': typeof WidgetRoute
   '/articles/$': typeof ArticlesSplatRoute
+  '/avatars/$hash': typeof AvatarsHashRoute
   '/brand/$asset': typeof BrandAssetRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/archived': typeof DashboardArchivedRoute
@@ -235,6 +244,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/widget'
     | '/articles/$'
+    | '/avatars/$hash'
     | '/brand/$asset'
     | '/dashboard/account'
     | '/dashboard/archived'
@@ -259,6 +269,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/widget'
     | '/articles/$'
+    | '/avatars/$hash'
     | '/brand/$asset'
     | '/dashboard/account'
     | '/dashboard/archived'
@@ -284,6 +295,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/widget'
     | '/articles/$'
+    | '/avatars/$hash'
     | '/brand/$asset'
     | '/dashboard/account'
     | '/dashboard/archived'
@@ -310,6 +322,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   WidgetRoute: typeof WidgetRoute
   ArticlesSplatRoute: typeof ArticlesSplatRoute
+  AvatarsHashRoute: typeof AvatarsHashRoute
   BrandAssetRoute: typeof BrandAssetRoute
   HelpSplatRoute: typeof HelpSplatRoute
   MediaSplatRoute: typeof MediaSplatRoute
@@ -380,6 +393,13 @@ declare module '@tanstack/react-router' {
       path: '/articles/$'
       fullPath: '/articles/$'
       preLoaderRoute: typeof ArticlesSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/avatars/$hash': {
+      id: '/avatars/$hash'
+      path: '/avatars/$hash'
+      fullPath: '/avatars/$hash'
+      preLoaderRoute: typeof AvatarsHashRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/brand/$asset': {
@@ -522,6 +542,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   WidgetRoute: WidgetRoute,
   ArticlesSplatRoute: ArticlesSplatRoute,
+  AvatarsHashRoute: AvatarsHashRoute,
   BrandAssetRoute: BrandAssetRoute,
   HelpSplatRoute: HelpSplatRoute,
   MediaSplatRoute: MediaSplatRoute,

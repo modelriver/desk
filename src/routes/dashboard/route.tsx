@@ -3,7 +3,7 @@ import { createFileRoute, getRouteApi, Link, Outlet, redirect, useRouter } from 
 import { useServerFn } from '@tanstack/react-start'
 import { getMe, signOut } from '../../functions/users.ts'
 import { waitingCount } from '../../functions/dashboard.ts'
-import { BrandMark } from '../../components/BrandMark.tsx'
+import { HelpBot } from '../../components/HelpBot.tsx'
 import { ArchiveIcon, BookIcon, ChartIcon, ChevronsUpDownIcon, SettingsIcon, UserIcon, ExternalIcon, InboxIcon, LinkIcon, LogOutIcon, UsersIcon } from '../../components/icons.tsx'
 import { Badge } from '../../components/ui.tsx'
 import { cn } from '../../lib/cn.ts'
@@ -84,7 +84,7 @@ function useWaitingCount(): number {
 
 function DashboardLayout() {
   const { user } = Route.useRouteContext()
-  const { brandName, logo, showName } = root.useLoaderData()
+  const { brandName } = root.useLoaderData()
   const router = useRouter()
   const logout = useServerFn(signOut)
   const waiting = useWaitingCount()
@@ -93,9 +93,10 @@ function DashboardLayout() {
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[15rem_1fr]">
       <aside className="flex flex-col gap-1 border-b border-border bg-muted/40 p-3 md:sticky md:top-0 md:h-dvh md:border-r md:border-b-0">
-        <Link to="/dashboard" className="mb-3 flex min-w-0 items-center gap-2.5 px-2 py-1.5 font-semibold tracking-tight" aria-label={showName ? undefined : brandName}>
-          <BrandMark logo={logo} size={24} />
-          {showName && <span className="truncate">{brandName}</span>}
+        {/* The bot and the name, like the chat: the logo is for the public pages. */}
+        <Link to="/dashboard" className="mb-3 flex min-w-0 items-center gap-2.5 px-2 py-1.5 font-semibold tracking-tight">
+          <HelpBot size={24} animated={false} />
+          <span className="truncate">{brandName}</span>
         </Link>
         <nav className="flex gap-1 overflow-x-auto md:flex-col" aria-label="Dashboard">
           <NavItem
@@ -166,7 +167,7 @@ function AccountMenu({
   initials,
   onSignOut,
 }: {
-  user: { name: string; email: string; role: 'admin' | 'agent' }
+  user: { name: string; email: string; role: 'admin' | 'agent'; avatar: string | null }
   initials: string
   onSignOut: () => Promise<void>
 }) {
@@ -191,17 +192,15 @@ function AccountMenu({
     }
   }, [open])
 
-  const avatar = (size: string) => (
-    <span
-      className={cn(
-        'grid shrink-0 place-items-center rounded-lg bg-primary/12 font-semibold text-primary',
-        size,
-      )}
-      aria-hidden="true"
-    >
-      {initials}
-    </span>
-  )
+  // Their profile picture from Account settings, else their initials, round like it.
+  const avatar = (size: string) =>
+    user.avatar ? (
+      <img src={user.avatar} alt="" className={cn('shrink-0 rounded-full object-cover', size)} />
+    ) : (
+      <span className={cn('grid shrink-0 place-items-center rounded-full bg-primary/12 font-semibold text-primary', size)} aria-hidden="true">
+        {initials}
+      </span>
+    )
 
   return (
     <div ref={root} className="relative mt-2 md:mt-auto">

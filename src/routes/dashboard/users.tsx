@@ -74,9 +74,13 @@ function UsersPage() {
           return (
             <li key={u.id} className="px-4 py-3">
               <div className="flex items-center gap-3">
-                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
-                  {initials(u.name)}
-                </span>
+                {u.avatar ? (
+                  <img src={u.avatar} alt="" className="size-9 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <span className="grid size-9 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                    {initials(u.name)}
+                  </span>
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 text-sm">
                     <span className="truncate font-medium">{u.name}</span>

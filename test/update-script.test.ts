@@ -118,6 +118,11 @@ test('an update goes to the newest release of the same major version, with a bac
   // The backup: data and settings, and a readable copy of the database.
   const [backup] = backups()
   assert.match(backup!, /^desk-1\.1\.0-\d{8}-\d{6}\.tgz$/)
+  // Nothing that would land on the folder it's unpacked into ("./" would
+  // carry the scratch folder's permissions onto /).
+  const members = execFileSync('tar', ['-tzf', path.join(root, 'var/backups/desk', backup!)], { encoding: 'utf8' }).trim().split('\n')
+  assert.ok(!members.some((m) => m === '.' || m === './'), members.join(', '))
+  assert.deepEqual([...new Set(members.map((m) => m.split('/')[0]))].sort(), ['desk.db', 'etc', 'var'])
   const out2 = path.join(dir, 'restore')
   fs.mkdirSync(out2)
   execFileSync('tar', ['-xzf', path.join(root, 'var/backups/desk', backup!), '-C', out2])

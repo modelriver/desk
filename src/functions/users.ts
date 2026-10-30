@@ -10,6 +10,7 @@ import { renderSVG } from 'uqr'
 import { getSiteConfig } from '../server/site-config.server.ts'
 import { getDb, now } from '../server/db.server.ts'
 import { hashPassword, MIN_PASSWORD_LENGTH, newTemporaryPassword, verifyPassword } from '../server/password.server.ts'
+import { avatarOf, avatarUrl } from '../server/avatars.server.ts'
 
 const ROLES = ['admin', 'agent'] as const
 
@@ -17,7 +18,11 @@ function password(o: Record<string, unknown>, key = 'password') {
   return str(o, key, { min: MIN_PASSWORD_LENGTH, max: 200 })
 }
 
-export const getMe = createServerFn({ method: 'GET' }).handler(async () => currentUser())
+// The signed-in user, with their profile picture for the sidebar.
+export const getMe = createServerFn({ method: 'GET' }).handler(async () => {
+  const user = currentUser()
+  return user && { ...user, avatar: avatarOf(user.id) }
+})
 
 // Step 1: password. The response says what comes next: a code from the
 // authenticator app, or (first time, or after a reset) setting one up.
@@ -82,9 +87,9 @@ export const signOut = createServerFn({ method: 'POST' }).handler(async () => {
 export const listUsers = createServerFn({ method: 'GET' }).handler(async () => {
   requireUser('admin')
   const rows = getDb()
-    .prepare('SELECT id, email, name, role, created_at, totp_enabled_at FROM users ORDER BY created_at')
-    .all() as Array<{ id: string; email: string; name: string; role: 'admin' | 'agent'; created_at: string; totp_enabled_at: string | null }>
-  return rows.map(({ totp_enabled_at, ...u }) => ({ ...u, twoFactorEnabled: totp_enabled_at !== null }))
+    .prepare('SELECT u.id, u.email, u.name, u.role, u.created_at, u.totp_enabled_at, a.hash AS avatar_hash FROM users u LEFT JOIN user_avatars a ON a.user_id = u.id ORDER BY u.created_at')
+    .all() as Array<{ id: string; email: string; name: string; role: 'admin' | 'agent'; created_at: string; totp_enabled_at: string | null; avatar_hash: string | null }>
+  return rows.map(({ totp_enabled_at, avatar_hash, ...u }) => ({ ...u, twoFactorEnabled: totp_enabled_at !== null, avatar: avatar_hash ? avatarUrl(avatar_hash) : null }))
 })
 
 export const createUser = createServerFn({ method: 'POST' })

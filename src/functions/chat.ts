@@ -36,6 +36,7 @@ import { getSiteConfig } from '../server/site-config.server.ts'
 import { errorMessage } from '../lib/errors.ts'
 import { escapeHtml } from '../lib/escape.ts'
 import { CHAT_PAUSED_MESSAGE, chatEnabled } from '../server/chat-availability.server.ts'
+import { avatarsByName } from '../server/avatars.server.ts'
 
 // Public chat endpoints used by the widget. A conversation is identified by an
 // HttpOnly cookie holding its id plus a random visitor token (stored hashed).
@@ -52,6 +53,8 @@ export interface WidgetMessage {
   role: 'user' | 'assistant'
   author: 'user' | 'ai' | 'agent'
   authorName?: string | null
+  // A team member's profile picture (/avatars/…), when they've set one.
+  authorAvatar?: string | null
   content: string
 }
 
@@ -463,15 +466,16 @@ export const getConversation = createServerFn({ method: 'POST' })
     }
     // Only the conversation's own turns; anything else ModelRiver might add
     // to a session (such as instructions) never reaches the visitor.
-    const messages: WidgetMessage[] = session.messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({
-        id: m.id,
-        role: m.role,
-        author: m.author,
-        authorName: m.author_name,
-        content: m.content,
-      }))
+    const turns = session.messages.filter((m) => m.role === 'user' || m.role === 'assistant')
+    const avatars = avatarsByName(turns.flatMap((m) => (m.author === 'agent' && m.author_name ? [m.author_name] : [])))
+    const messages: WidgetMessage[] = turns.map((m) => ({
+      id: m.id,
+      role: m.role,
+      author: m.author,
+      authorName: m.author_name,
+      authorAvatar: m.author === 'agent' && m.author_name ? (avatars.get(m.author_name) ?? null) : null,
+      content: m.content,
+    }))
     return { conversation, messages, articles }
   }),
 )

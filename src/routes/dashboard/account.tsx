@@ -1,7 +1,10 @@
-import { useId, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { useId, useRef, useState } from 'react'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { getMyAccount, setMyNotifications } from '../../functions/account.ts'
+import { getMyAccount, removeMyAvatar, setMyNotifications, uploadMyAvatar } from '../../functions/account.ts'
+import { prepareAvatar } from '../../lib/image-prepare.ts'
+import { initials } from '../../lib/initials.ts'
+import { BusyIcon } from '../../components/BusyIcon.tsx'
 import { setPassword } from '../../functions/users.ts'
 import { LoadError } from '../../components/LoadError.tsx'
 import { Badge, Button, Input, Label, Notice, PageHeader, Section, Switch } from '../../components/ui.tsx'
@@ -34,7 +37,7 @@ function AccountPage() {
       <PageHeader title="Account settings" description="Your own sign-in and notifications." />
       <div className="grid gap-5">
         <Section title="Profile">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div className="min-w-0">
               <p className="flex items-center gap-2 font-medium">
                 {account.name}
@@ -54,12 +57,79 @@ function AccountPage() {
               )}
             </p>
           </div>
+          <ProfilePicture account={account} onChange={setAccount} />
         </Section>
 
         <Notifications account={account} isAdmin={user.role === 'admin'} onSaved={setAccount} />
         <PasswordForm userId={user.id} />
       </div>
     </>
+  )
+}
+
+// The picture visitors see beside your replies in the chat, instead of the bot.
+function ProfilePicture({ account, onChange }: { account: Account; onChange: (a: Account) => void }) {
+  const upload = useServerFn(uploadMyAvatar)
+  const remove = useServerFn(removeMyAvatar)
+  const router = useRouter()
+  const input = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = async (action: () => Promise<Account>) => {
+    setBusy(true)
+    setError(null)
+    try {
+      onChange(await action())
+      // The sidebar's account row shows it too.
+      await router.invalidate()
+    } catch (err) {
+      setError(errorMessage(err, 'Couldn’t save the picture. Please try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const pick = (file: File | undefined) => {
+    if (input.current) input.current.value = ''
+    if (!file) return
+    void run(async () => {
+      const form = new FormData()
+      form.set('file', await prepareAvatar(file), 'avatar.webp')
+      return upload({ data: form })
+    })
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+      {account.avatar ? (
+        <img src={account.avatar} alt="" className="size-12 shrink-0 rounded-full object-cover" />
+      ) : (
+        <span className="grid size-12 shrink-0 place-items-center rounded-full bg-muted text-sm font-medium text-muted-foreground" aria-hidden="true">
+          {initials(account.name)}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">Profile picture</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">Shown to visitors beside your replies in the chat. A square photo works best; it’s cropped to the middle.</p>
+        {error && (
+          <div className="mt-1.5">
+            <Notice tone="error">{error}</Notice>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        {account.avatar && (
+          <Button variant="ghost-destructive" size="sm" disabled={busy} onClick={() => void run(() => remove())}>
+            Remove
+          </Button>
+        )}
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => input.current?.click()}>
+          <BusyIcon busy={busy} size={14} />
+          {account.avatar ? 'Change' : 'Upload'}
+        </Button>
+        <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
+      </div>
+    </div>
   )
 }
 

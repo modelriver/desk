@@ -64,7 +64,7 @@ function LogoSection({ branding, onChange }: Props) {
   const darkFromFile = !branding.logo && Boolean(logo?.dark) && !branding.logoDark
 
   return (
-    <Section title="Logo" description="Shown at the top of every page and in the dashboard. Add a dark-mode version if your logo doesn’t show up well on a dark background.">
+    <Section title="Logo" description="Shown at the top of every help-center page. Add a dark-mode version if your logo doesn’t show up well on a dark background.">
       <LogoRow
         label="Light mode"
         palette={light}

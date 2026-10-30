@@ -157,12 +157,27 @@ export function applyBranding(config: SiteConfig, b: Branding): SiteConfig {
 
 type Accents = Pick<Palette, 'primary' | 'primaryHover' | 'primaryForeground' | 'accent' | 'accentForeground' | 'ring'>
 
+// Below this saturation a colour reads as black, white or grey: it has no hue
+// to carry into highlights, so it's treated as monochrome, like Desk's own theme.
+const NEUTRAL_SATURATION = 8
+
+// Ink buttons for a black, white or grey brand: near-black in light mode,
+// near-white in dark mode, on soft grey highlights.
+const MONO_LIGHT: Accents = { primary: '#111111', primaryHover: '#333333', primaryForeground: '#ffffff', accent: '#f0f0f0', accentForeground: '#171717', ring: '#111111' }
+const MONO_DARK: Accents = { primary: '#f2f2f2', primaryHover: '#d4d4d4', primaryForeground: '#111111', accent: '#262626', accentForeground: '#ededed', ring: '#f2f2f2' }
+
 export function lightAccents(hex: string): Accents {
-  const [h, s, l] = toHsl(hex)
-  const primary = normalizeHex(hex)
+  const [h, s, l0] = toHsl(hex)
+  if (s < NEUTRAL_SATURATION) return { ...MONO_LIGHT }
+  // A very pale colour would vanish on a white page: deepen it, a step at a
+  // time (yellows stay bright longest), until it stands out.
+  let l = l0
+  while (l > 10 && contrast(fromHsl(h, s, l), '#ffffff') < 1.6) l -= 3
+  const primary = l === l0 ? normalizeHex(hex) : fromHsl(h, s, l)
   return {
     primary,
-    primaryHover: fromHsl(h, s, clamp(l - 8, 5, 90)),
+    // Darker on hover, or lighter for a colour already close to black.
+    primaryHover: fromHsl(h, s, l < 20 ? l + 10 : clamp(l - 8, 5, 90)),
     primaryForeground: readableOn(primary),
     accent: fromHsl(h, Math.min(s, 60), 95),
     accentForeground: fromHsl(h, Math.min(s, 70), 25),
@@ -170,14 +185,19 @@ export function lightAccents(hex: string): Accents {
   }
 }
 
+const DARK_SATURATION = 65
+
 export function darkAccents(hex: string): Accents {
   const [h, s, l] = toHsl(hex)
-  // Lifted so it stands out on a dark background.
-  const primary = fromHsl(h, s, clamp(l + 12, 55, 72))
+  if (s < NEUTRAL_SATURATION) return { ...MONO_DARK }
+  // Lifted so it stands out on a dark background, with the saturation capped:
+  // a vivid colour made this light glows (emerald would turn neon mint).
+  const sat = Math.min(s, DARK_SATURATION)
+  const primary = fromHsl(h, sat, clamp(l + 12, 55, 72))
   const [, , pl] = toHsl(primary)
   return {
     primary,
-    primaryHover: fromHsl(h, s, clamp(pl + 8, 60, 82)),
+    primaryHover: fromHsl(h, sat, clamp(pl + 8, 60, 82)),
     primaryForeground: readableOn(primary),
     accent: fromHsl(h, Math.min(s, 45), 16),
     accentForeground: fromHsl(h, Math.min(s, 70), 80),
@@ -185,10 +205,34 @@ export function darkAccents(hex: string): Accents {
   }
 }
 
-// White or near-black text, whichever is easier to read on `hex`.
+// White or near-black text, whichever is easier to read on `hex`. The WCAG
+// ratio alone picks black on mid-tone colours like emerald or orange, where
+// white reads better; APCA (the perceptual contrast model behind WCAG 3)
+// judges that the way people see it. White wins when APCA prefers it and it
+// still meets 3:1; otherwise the higher WCAG ratio decides.
 export function readableOn(hex: string): string {
+  const white = '#ffffff'
   const dark = '#111111'
-  return contrast(hex, '#ffffff') >= contrast(hex, dark) ? '#ffffff' : dark
+  if (contrast(hex, white) >= 3 && Math.abs(apca(white, hex)) >= Math.abs(apca(dark, hex))) return white
+  return contrast(hex, white) >= contrast(hex, dark) ? white : dark
+}
+
+// APCA lightness contrast (0.0.98G-4g) of text on a background, about -108 to 106.
+export function apca(text: string, background: string): number {
+  const y = (hex: string) => {
+    const [r, g, b] = rgb(hex).map((c) => (c / 255) ** 2.4) as [number, number, number]
+    const lum = 0.2126729 * r + 0.7151522 * g + 0.072175 * b
+    return lum < 0.022 ? lum + (0.022 - lum) ** 1.414 : lum
+  }
+  const txt = y(text)
+  const bg = y(background)
+  if (Math.abs(bg - txt) < 0.0005) return 0
+  if (bg > txt) {
+    const s = (bg ** 0.56 - txt ** 0.57) * 1.14
+    return s < 0.1 ? 0 : (s - 0.027) * 100
+  }
+  const s = (bg ** 0.65 - txt ** 0.62) * 1.14
+  return s > -0.1 ? 0 : (s + 0.027) * 100
 }
 
 export function contrast(a: string, b: string): number {

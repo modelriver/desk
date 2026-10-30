@@ -39,7 +39,18 @@ sudo desk-update --rollback   # back to the version before the last update
 
 It saves `/var/lib/desk` and `/etc/desk` to `/var/backups/desk` first (with a consistent copy of the database; the last 3 are kept), builds the new release in `/opt/desk.next` while the current one keeps running, then switches over and restarts, a few seconds of downtime. If the new version doesn't answer within 30 seconds it switches back on its own. A new major version waits until you name it. Settings, data, nginx and HTTPS aren't touched. Releases come from the repository you installed from (`--repo`, saved in `/etc/desk/setup.conf`).
 
-To restore a backup: `sudo tar -xzf /var/backups/desk/FILE.tgz -C /`, then move the `desk.db` copy at the top of the archive to `/var/lib/desk/desk.db` (with Desk stopped).
+To restore a backup, unpack it into an empty folder (never over `/`) and copy it back with Desk stopped. Remove the old database's `-wal` and `-shm` files so they can't be replayed onto the restored copy:
+
+```bash
+sudo systemctl stop desk
+sudo mkdir /tmp/desk-restore && sudo tar -xzf /var/backups/desk/FILE.tgz -C /tmp/desk-restore
+sudo rsync -a /tmp/desk-restore/var/lib/desk/ /var/lib/desk/
+sudo rm -f /var/lib/desk/desk.db-wal /var/lib/desk/desk.db-shm
+sudo install -o desk -g desk -m 640 /tmp/desk-restore/desk.db /var/lib/desk/desk.db
+sudo systemctl start desk
+```
+
+The archive also holds `etc/desk/env`, if you need your settings back.
 
 Running the setup script again also still works, with the same options: it fetches the app, rebuilds in place, restarts, and keeps `/etc/desk/env`, your data and the nginx config. To regenerate the nginx config, delete `/etc/nginx/sites-available/desk` first. An install from before `desk-update` gets it by running the script once more.
 

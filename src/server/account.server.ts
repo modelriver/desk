@@ -1,5 +1,6 @@
 import { getDb } from './db.server.ts'
 import { emailStatus } from './email.server.ts'
+import { avatarOf } from './avatars.server.ts'
 
 // A team member's own account: their notification choices.
 
@@ -25,6 +26,8 @@ export function getAccount(userId: string) {
     email: row.email,
     role: row.role,
     twoFactorSince: row.totp_enabled_at,
+    // Shown beside this person's replies in the chat.
+    avatar: avatarOf(userId),
     notifications: { handoff: row.notify_handoff === 1, newConversations: row.notify_new_conversations === 1 },
     // Whether this server can send email at all; the page explains if not.
     emailReady: email.ready,

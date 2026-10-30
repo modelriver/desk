@@ -80,3 +80,31 @@ function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Prom
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('This browser couldn’t prepare that image.'))), type, quality),
   )
 }
+
+// A profile picture: the middle square of the photo at 256 × 256 (shown at
+// 26 px, sharp on a 2× screen and then some), as WebP. Re-encoding drops the
+// photo's metadata too.
+const AVATAR_SIDE = 256
+
+export async function prepareAvatar(file: File): Promise<Blob> {
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+  } catch {
+    throw new Error('This browser can’t read that picture. Use PNG, JPEG or WebP.')
+  }
+  try {
+    const side = Math.min(bitmap.width, bitmap.height)
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = AVATAR_SIDE
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('This browser can’t prepare pictures for upload.')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, AVATAR_SIDE, AVATAR_SIDE)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.88))
+    if (!blob) throw new Error('This browser can’t prepare pictures for upload.')
+    return blob
+  } finally {
+    bitmap.close()
+  }
+}

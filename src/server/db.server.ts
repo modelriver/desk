@@ -222,6 +222,17 @@ const MIGRATIONS = [
     updated_by TEXT
   );
   `,
+  // v19: team members' profile pictures, shown beside their replies in the chat.
+  // Served by hash (/avatars/<hash>), so the address never names the person.
+  `
+  CREATE TABLE user_avatars (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    data BLOB NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ]
 
 let db: DatabaseSync | undefined
