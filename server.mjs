@@ -9,6 +9,7 @@ import { pipeline } from 'node:stream/promises'
 import handler from './dist/server/server.js'
 import { checkSiteConfig, readSiteConfigFile } from './src/server/site-config.server.ts'
 import { fontCspSources } from './src/lib/site-config.ts'
+import { BRAND_ASSET_CSP } from './src/server/branding.server.ts'
 import { scheduleCleanup } from './src/server/archive.server.ts'
 
 const PORT = Number(process.env.PORT ?? 3000)
@@ -27,8 +28,10 @@ const wsOrigin = `${apiUrl.protocol === 'http:' ? 'ws' : 'wss'}://${apiUrl.host}
 const fontSources = fontCspSources(readSiteConfigFile())
 // Also checks that the logo files in the config exist and are SVGs.
 checkSiteConfig()
-const styleSrc = ["'self'", "'unsafe-inline'", ...fontSources.style].join(' ')
-const fontSrc = ["'self'", 'data:', ...fontSources.font].join(' ')
+// Google Fonts is always allowed: the fonts picked in Settings come from it,
+// and they can change without a restart.
+const styleSrc = [...new Set(["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', ...fontSources.style])].join(' ')
+const fontSrc = [...new Set(["'self'", 'data:', 'https://fonts.gstatic.com', ...fontSources.font])].join(' ')
 
 const TYPES = {
   '.js': 'text/javascript; charset=utf-8',
@@ -43,6 +46,15 @@ const TYPES = {
 
 function securityHeaders(pathname) {
   const frameAncestors = pathname === '/widget' ? WIDGET_FRAME_ANCESTORS : "'self'"
+  // Uploaded logos and favicons: nothing in an SVG opened directly may run.
+  if (pathname.startsWith('/brand/')) {
+    return {
+      'Content-Security-Policy': BRAND_ASSET_CSP,
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Strict-Transport-Security': 'max-age=31536000',
+    }
+  }
   return {
     'Content-Security-Policy': [
       "default-src 'self'",

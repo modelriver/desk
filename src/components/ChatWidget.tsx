@@ -25,8 +25,6 @@ import { CONVERSATION_UPDATED, LIVE_SAFETY_REFRESH_MS } from '../lib/live.ts'
 import type { Source } from '../lib/prompt-core.ts'
 import { Markdown } from './Markdown.tsx'
 import { HelpBot, type BotMood } from './HelpBot.tsx'
-import { BrandMark } from './BrandMark.tsx'
-import type { Logo } from '../lib/site-config.ts'
 import { Button, Input } from './ui.tsx'
 import {
   ArrowUpIcon,
@@ -45,6 +43,7 @@ import { deleteCookie, readCookie, writeCookie } from '../lib/client-cookie.ts'
 import { BusyIcon } from './BusyIcon.tsx'
 import { errorMessage } from '../lib/errors.ts'
 import { articleUrl } from '../lib/help-path.ts'
+import { lockPageScroll, PHONE_QUERY } from '../lib/scroll-lock.ts'
 
 interface UiMessage extends WidgetMessage {
   streaming?: boolean
@@ -118,13 +117,11 @@ function textFromResponse(data: unknown): string {
 export function ChatWidget({
   repoUrl,
   brandName,
-  logo,
   embedded = false,
   identityToken = null,
 }: {
   repoUrl: string
   brandName: string
-  logo: Logo
   embedded?: boolean
   // Signed by the site embedding the widget for a signed-in visitor (see README, Integrations).
   identityToken?: string | null
@@ -335,6 +332,13 @@ export function ChatWidget({
   }
 
   useEffect(() => () => socket.current?.destroy(), [])
+
+  // On a phone the open chat fills the screen: the page behind it stays put
+  // instead of scrolling along (and showing its scrollbar) under the chat.
+  useEffect(() => {
+    if (!open || embedded || !window.matchMedia(PHONE_QUERY).matches) return
+    return lockPageScroll()
+  }, [open, embedded])
 
   // Set while the page is being refreshed or left. The browser closes the
   // websocket then, which looks like a dropped connection; reacting to it
@@ -853,11 +857,13 @@ export function ChatWidget({
         !embedded && (closing ? 'chat-leave' : entrance && 'chat-enter'),
         embedded
           ? 'h-dvh w-full'
-          : 'fixed right-5 bottom-5 z-50 h-[min(640px,calc(100dvh-2.5rem))] w-[min(400px,calc(100vw-2.5rem))] rounded-2xl border border-border max-sm:inset-2 max-sm:h-auto max-sm:w-auto',
+          : // Full screen on a phone; a floating panel from `sm` up.
+            'fixed right-5 bottom-5 z-50 h-[min(640px,calc(100dvh-2.5rem))] w-[min(400px,calc(100vw-2.5rem))] rounded-2xl border border-border max-sm:inset-0 max-sm:h-dvh max-sm:w-full max-sm:rounded-none max-sm:border-0',
       )}
     >
       <header className="flex items-center gap-3 border-b border-border px-4 py-3">
-        {logo ? <BrandMark logo={logo} size={28} /> : <HelpBot mood={botMood} size={32} label={`Help bot, ${botMood}`} />}
+        {/* Always the bot, never the logo: its mood shows what the assistant is doing, and a wide logo would crowd the name. */}
+        <HelpBot mood={botMood} size={32} label={`Help bot, ${botMood}`} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{brandName}</p>
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-live="polite">
@@ -906,7 +912,7 @@ export function ChatWidget({
           <p className="sr-only" aria-live="polite">
             {lastReply ? `${lastReply.author === 'agent' ? lastReply.authorName || 'Team' : 'Assistant'}: ${lastReply.content}` : ''}
           </p>
-          <div ref={list} onScroll={onListScroll} className="flex-1 space-y-5 overflow-y-auto px-4 py-5">
+          <div ref={list} onScroll={onListScroll} className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5">
             {messages.length === 0 && (
               <div className="flex h-full flex-col justify-end pb-2">
                 <HelpBot body="figure" mood={input.trim() ? 'listening' : 'idle'} size={84} className="-ml-2 mb-3" />
@@ -987,7 +993,7 @@ export function ChatWidget({
       )}
       <footer className="pb-2.5 text-center text-[11px] text-muted-foreground">
         <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">
-          Open source, built on ModelRiver
+          Powered by Desk
         </a>
       </footer>
     </section>

@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react'
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createFileRoute, Link, redirect } from '@tanstack/react-router'
+import { AppearanceSettings, SeoSettings } from '../../components/BrandingSettings.tsx'
 import { useServerFn } from '@tanstack/react-start'
 import { getMonthUsage, getSettings, sendTestEmail, setChatAvailability } from '../../functions/settings.ts'
 import { testImageStorage } from '../../functions/media.ts'
@@ -12,8 +13,19 @@ import { cn } from '../../lib/cn.ts'
 import { BusyIcon } from '../../components/BusyIcon.tsx'
 import { errorMessage } from '../../lib/errors.ts'
 
+const TABS = [
+  { id: 'general', label: 'General' },
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'seo', label: 'SEO' },
+  { id: 'system', label: 'System' },
+] as const
+
+type Tab = (typeof TABS)[number]['id']
+
 export const Route = createFileRoute('/dashboard/settings')({
   head: () => ({ meta: [{ title: 'Settings · Dashboard' }] }),
+  validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
+    TABS.some((t) => t.id === search.tab && t.id !== 'general') ? { tab: search.tab as Tab } : {},
   beforeLoad: ({ context }) => {
     if (context.user.role !== 'admin') throw redirect({ to: '/dashboard' })
   },
@@ -37,15 +49,17 @@ const CONNECTION = {
   error: { label: 'Error', tone: 'bad' },
 } as const
 
-// Mostly read-only: what comes from the server's environment and
-// support.config.json says where to change it. The chat switch at the top is
-// the one setting changed here.
+// Four tabs: General (the chat and the AI), Appearance and SEO (changed here,
+// applied at once), and System (read-only: what comes from the server's
+// environment says where to change it).
 function Settings() {
   const loaded = Route.useLoaderData()
+  const tab = Route.useSearch().tab ?? 'general'
   const fetchSettings = useServerFn(getSettings)
   const [data, setData] = useState<Data>(loaded)
   const [checking, setChecking] = useState(false)
   const s = data
+  const setBranding = (branding: Data['branding']) => setData((d) => ({ ...d, branding }))
 
   const recheck = async () => {
     setChecking(true)
@@ -61,159 +75,219 @@ function Settings() {
 
   return (
     <>
-      <PageHeader
-        title="Settings"
-        description="How this install is set up, and whether the AI is reachable. Values come from the server’s environment and support.config.json: change them there and restart the app. Only admins see this page."
-      />
+      <PageHeader title="Settings" description="How this help center looks, how it shows up in search, and how the install is set up. Only admins see this page." />
 
-      <div className="grid gap-5">
-        <ChatSwitch status={s.chat} onChange={(chat) => setData((d) => ({ ...d, chat }))} />
-        <Section title="AI connection">
-          <div className="flex flex-wrap items-start gap-3 border-b border-border px-5 py-4">
-            <span
-              className={cn('mt-1.5 size-2.5 shrink-0 rounded-full', conn.tone === 'ok' ? 'bg-success' : 'bg-destructive')}
-              aria-hidden="true"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="font-medium">{conn.label}</p>
-              <p className="mt-0.5 text-sm text-muted-foreground">{s.ai.connection.detail}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Checked <RelativeTime iso={s.ai.connection.checkedAt} />
-                {s.ai.connection.latencyMs !== null && <> in {s.ai.connection.latencyMs} ms</>}
-              </p>
+      <TabBar tab={tab} />
+
+      {tab === 'appearance' && <AppearanceSettings branding={s.branding} onChange={setBranding} />}
+
+      {tab === 'seo' && <SeoSettings branding={s.branding} onChange={setBranding} />}
+
+      {tab === 'general' && (
+        <div className="grid gap-5">
+          <ChatSwitch status={s.chat} onChange={(chat) => setData((d) => ({ ...d, chat }))} />
+          <Section title="AI connection">
+            <div className="flex flex-wrap items-start gap-3 border-b border-border px-5 py-4">
+              <span
+                className={cn('mt-1.5 size-2.5 shrink-0 rounded-full', conn.tone === 'ok' ? 'bg-success' : 'bg-destructive')}
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{conn.label}</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">{s.ai.connection.detail}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Checked <RelativeTime iso={s.ai.connection.checkedAt} />
+                  {s.ai.connection.latencyMs !== null && <> in {s.ai.connection.latencyMs} ms</>}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" disabled={checking} onClick={() => void recheck()}>
+                <BusyIcon busy={checking} size={14} idle={<RefreshIcon size={14} />} />
+                Check again
+              </Button>
             </div>
-            <Button variant="outline" size="sm" disabled={checking} onClick={() => void recheck()}>
-              <BusyIcon busy={checking} size={14} idle={<RefreshIcon size={14} />} />
-              Check again
-            </Button>
-          </div>
-          <Row label="ModelRiver API" setting="MODELRIVER_API_URL">
-            <Code>{s.ai.apiUrl}</Code>
-          </Row>
-          <Row label="Workflow" setting="MODELRIVER_WORKFLOW">
-            <Code>{s.ai.workflow}</Code>
-          </Row>
-          <Row label="API key" setting="MODELRIVER_API_KEY">
-            {s.ai.keySet ? <Badge variant="success">Set</Badge> : <Badge variant="danger">Not set</Badge>}
-          </Row>
-          <Row label="Last answer started" hint="Since the server started.">
-            {s.ai.lastAnswerAt ? <RelativeTime iso={s.ai.lastAnswerAt} /> : <Muted>None yet</Muted>}
-          </Row>
-          <Row label="Last time the AI couldn’t answer" hint="Those chats went to the team.">
-            {s.ai.lastFailure ? (
+            <Row label="ModelRiver API" setting="MODELRIVER_API_URL">
+              <Code>{s.ai.apiUrl}</Code>
+            </Row>
+            <Row label="Workflow" setting="MODELRIVER_WORKFLOW">
+              <Code>{s.ai.workflow}</Code>
+            </Row>
+            <Row label="API key" setting="MODELRIVER_API_KEY">
+              {s.ai.keySet ? <Badge variant="success">Set</Badge> : <Badge variant="danger">Not set</Badge>}
+            </Row>
+            <Row label="Last answer started" hint="Since the server started.">
+              {s.ai.lastAnswerAt ? <RelativeTime iso={s.ai.lastAnswerAt} /> : <Muted>None yet</Muted>}
+            </Row>
+            <Row label="Last time the AI couldn’t answer" hint="Those chats went to the team.">
+              {s.ai.lastFailure ? (
+                <span className="text-right">
+                  <RelativeTime iso={s.ai.lastFailure.at} />
+                  <span className="block text-xs text-muted-foreground">{s.ai.lastFailure.reason}</span>
+                </span>
+              ) : (
+                <Muted>None since the server started</Muted>
+              )}
+            </Row>
+          </Section>
+
+          <UsageSection initial={s.usage} since={s.usageSince} />
+
+          <Section title="AI budget" description="Site-wide caps on AI answers, whoever asks. When one is used up, new questions go to the team. Counts restart with the server.">
+            <Row label="This minute" setting="GLOBAL_MESSAGES_PER_MINUTE">
+              <Usage used={s.budget.usedThisMinute} max={s.budget.perMinute} nf={nf} />
+            </Row>
+            <Row label="Last 24 hours" setting="GLOBAL_MESSAGES_PER_DAY">
+              <Usage used={s.budget.usedToday} max={s.budget.perDay} nf={nf} />
+            </Row>
+          </Section>
+        </div>
+      )}
+
+      {tab === 'system' && (
+        <div className="grid gap-5">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            These come from the server’s environment and support.config.json. Change them there and restart the app.
+          </p>
+
+          <EmailSection email={s.email} onSent={() => void fetchSettings({ data: { recheck: false } }).then(setData)} />
+
+          <ImagesSection media={s.media} onTested={() => void fetchSettings({ data: { recheck: false } }).then(setData)} />
+
+          <Section title="Sign-in security">
+            <Row label="Two-factor sign-in" setting="DISABLE_TWO_FACTOR">
+              {s.security.twoFactorRequired ? (
+                <Badge variant="success">Required for everyone</Badge>
+              ) : (
+                <Badge variant="danger">Turned off: password only</Badge>
+              )}
+            </Row>
+            <Row label="Team members">{s.security.members}</Row>
+            <Row label="Haven’t set up two-factor" hint="They set it up at their next sign-in.">
+              <People people={s.security.withoutTwoFactor} none="Everyone has" />
+            </Row>
+            <Row label="Locked after too many wrong codes" hint="Unlock with Reset two-factor under Users.">
+              <People people={s.security.locked} none="None" danger />
+            </Row>
+            <Row label="Secure cookies" hint="Sign-in and chat cookies are only sent over HTTPS.">
+              {s.security.secureCookies ? <Badge variant="success">On</Badge> : <Badge variant="danger">Off (development)</Badge>}
+            </Row>
+          </Section>
+
+          <Section title="Visitors and network">
+            <Row label="Your IP, as the app sees it" hint="Rate limits are counted per IP.">
+              <Code>{s.network.yourIp}</Code>
+            </Row>
+            <Row label="Trusted proxies" setting={s.network.clientIpHeader ? 'CLIENT_IP_HEADER' : 'TRUST_PROXY_HOPS'}>
+              {s.network.clientIpHeader ? (
+                <Code>{s.network.clientIpHeader}</Code>
+              ) : s.network.trustedProxyHops > 0 ? (
+                `${s.network.trustedProxyHops} ${s.network.trustedProxyHops === 1 ? 'proxy' : 'proxies'}`
+              ) : (
+                <Muted>None (visitors connect directly)</Muted>
+              )}
+            </Row>
+            {s.network.warning && (
+              <p role="alert" className="border-b border-border bg-destructive/5 px-5 py-3 text-sm text-destructive last:border-b-0">
+                {s.network.warning}
+              </p>
+            )}
+            <Row label="Sites that can embed the chat" setting="WIDGET_FRAME_ANCESTORS">
+              {s.network.widgetFrameAncestors === "'self'" ? <Muted>Only this site</Muted> : <Code>{s.network.widgetFrameAncestors}</Code>}
+            </Row>
+          </Section>
+
+          <Section title="Content and retention">
+            <Row label="Data folder" setting="DATA_DIR">
+              <Code>{s.content.dataDir}</Code>
+            </Row>
+            <Row label="Help articles (public)">{s.content.publicFiles}</Row>
+            <Row label="Internal notes (private)">{s.content.privateFiles}</Row>
+            <Row label="Archived conversations are deleted" setting="ARCHIVE_RETENTION_HOURS">
+              {s.content.archiveRetentionHours > 0 ? `${hours(s.content.archiveRetentionHours)} after archiving` : <Muted>Never (kept until restored)</Muted>}
+            </Row>
+            <Row label="A visitor’s chat is remembered" setting="VISITOR_COOKIE_DAYS">
+              {s.content.visitorCookieDays > 0
+                ? `${s.content.visitorCookieDays} ${s.content.visitorCookieDays === 1 ? 'day' : 'days'} after their last message`
+                : 'Until they close the browser'}
+            </Row>
+          </Section>
+
+          <Section title="About this install">
+            <Row label="Version">
+              <Code>{s.app.version}</Code>
+            </Row>
+            <Row label="Node.js">
+              <Code>{s.app.node}</Code>
+            </Row>
+            <Row label="Database" setting="DATABASE_PATH">
               <span className="text-right">
-                <RelativeTime iso={s.ai.lastFailure.at} />
-                <span className="block text-xs text-muted-foreground">{s.ai.lastFailure.reason}</span>
+                <Code>{s.app.databasePath}</Code>
+                <span className="block text-xs text-muted-foreground">
+                  {(s.app.databaseBytes / 1024).toFixed(0)} KB, schema version {s.app.schemaVersion}
+                </span>
               </span>
-            ) : (
-              <Muted>None since the server started</Muted>
-            )}
-          </Row>
-        </Section>
-
-        <EmailSection email={s.email} onSent={() => void fetchSettings({ data: { recheck: false } }).then(setData)} />
-
-        <ImagesSection media={s.media} onTested={() => void fetchSettings({ data: { recheck: false } }).then(setData)} />
-
-        <UsageSection initial={s.usage} since={s.usageSince} />
-
-        <Section title="AI budget" description="Site-wide caps on AI answers, whoever asks. When one is used up, new questions go to the team. Counts restart with the server.">
-          <Row label="This minute" setting="GLOBAL_MESSAGES_PER_MINUTE">
-            <Usage used={s.budget.usedThisMinute} max={s.budget.perMinute} nf={nf} />
-          </Row>
-          <Row label="Last 24 hours" setting="GLOBAL_MESSAGES_PER_DAY">
-            <Usage used={s.budget.usedToday} max={s.budget.perDay} nf={nf} />
-          </Row>
-        </Section>
-
-        <Section title="Sign-in security">
-          <Row label="Two-factor sign-in" setting="DISABLE_TWO_FACTOR">
-            {s.security.twoFactorRequired ? (
-              <Badge variant="success">Required for everyone</Badge>
-            ) : (
-              <Badge variant="danger">Turned off: password only</Badge>
-            )}
-          </Row>
-          <Row label="Team members">{s.security.members}</Row>
-          <Row label="Haven’t set up two-factor" hint="They set it up at their next sign-in.">
-            <People people={s.security.withoutTwoFactor} none="Everyone has" />
-          </Row>
-          <Row label="Locked after too many wrong codes" hint="Unlock with Reset two-factor under Users.">
-            <People people={s.security.locked} none="None" danger />
-          </Row>
-          <Row label="Secure cookies" hint="Sign-in and chat cookies are only sent over HTTPS.">
-            {s.security.secureCookies ? <Badge variant="success">On</Badge> : <Badge variant="danger">Off (development)</Badge>}
-          </Row>
-        </Section>
-
-        <Section title="Visitors and network">
-          <Row label="Your IP, as the app sees it" hint="Rate limits are counted per IP.">
-            <Code>{s.network.yourIp}</Code>
-          </Row>
-          <Row label="Trusted proxies" setting={s.network.clientIpHeader ? 'CLIENT_IP_HEADER' : 'TRUST_PROXY_HOPS'}>
-            {s.network.clientIpHeader ? (
-              <Code>{s.network.clientIpHeader}</Code>
-            ) : s.network.trustedProxyHops > 0 ? (
-              `${s.network.trustedProxyHops} ${s.network.trustedProxyHops === 1 ? 'proxy' : 'proxies'}`
-            ) : (
-              <Muted>None (visitors connect directly)</Muted>
-            )}
-          </Row>
-          {s.network.warning && (
-            <p role="alert" className="border-b border-border bg-destructive/5 px-5 py-3 text-sm text-destructive last:border-b-0">
-              {s.network.warning}
-            </p>
-          )}
-          <Row label="Sites that can embed the chat" setting="WIDGET_FRAME_ANCESTORS">
-            {s.network.widgetFrameAncestors === "'self'" ? <Muted>Only this site</Muted> : <Code>{s.network.widgetFrameAncestors}</Code>}
-          </Row>
-        </Section>
-
-        <Section title="Content and retention">
-          <Row label="Data folder" setting="DATA_DIR">
-            <Code>{s.content.dataDir}</Code>
-          </Row>
-          <Row label="Help articles (public)">{s.content.publicFiles}</Row>
-          <Row label="Internal notes (private)">{s.content.privateFiles}</Row>
-          <Row label="Archived conversations are deleted" setting="ARCHIVE_RETENTION_HOURS">
-            {s.content.archiveRetentionHours > 0 ? `${hours(s.content.archiveRetentionHours)} after archiving` : <Muted>Never (kept until restored)</Muted>}
-          </Row>
-          <Row label="A visitor’s chat is remembered" setting="VISITOR_COOKIE_DAYS">
-            {s.content.visitorCookieDays > 0
-              ? `${s.content.visitorCookieDays} ${s.content.visitorCookieDays === 1 ? 'day' : 'days'} after their last message`
-              : 'Until they close the browser'}
-          </Row>
-        </Section>
-
-        <Section title="About this install">
-          <Row label="Version">
-            <Code>{s.app.version}</Code>
-          </Row>
-          <Row label="Node.js">
-            <Code>{s.app.node}</Code>
-          </Row>
-          <Row label="Database" setting="DATABASE_PATH">
-            <span className="text-right">
-              <Code>{s.app.databasePath}</Code>
-              <span className="block text-xs text-muted-foreground">
-                {(s.app.databaseBytes / 1024).toFixed(0)} KB, schema version {s.app.schemaVersion}
-              </span>
-            </span>
-          </Row>
-          <Row label="Look and brand" setting="SUPPORT_CONFIG">
-            <span className="text-right">
+            </Row>
+            <Row label="Look and brand" hint="Defaults under what Appearance and SEO set." setting="SUPPORT_CONFIG">
               <Code>{s.app.configPath}</Code>
-              <span className="block text-xs text-muted-foreground">
-                “{s.app.brandName}”, {s.app.customLogo ? 'custom logo' : 'default mark'}
-              </span>
-            </span>
-          </Row>
-        </Section>
-      </div>
+            </Row>
+          </Section>
+        </div>
+      )}
     </>
   )
 }
 
+
+// The tabs, with one underline that slides to the chosen tab. It's measured
+// after each render and placed without motion the first time, so it doesn't
+// fly in on page load. The chosen tab only changes colour, not weight, so
+// the labels never shift.
+function TabBar({ tab }: { tab: Tab }) {
+  const nav = useRef<HTMLElement>(null)
+  const [bar, setBar] = useState<{ left: number; width: number; moved: boolean } | null>(null)
+
+  useLayoutEffect(() => {
+    const place = () => {
+      const active = nav.current?.querySelector<HTMLElement>('[aria-selected="true"]')
+      if (!active) return
+      setBar((prev) => ({ left: active.offsetLeft, width: active.offsetWidth, moved: prev !== null }))
+    }
+    place()
+    // Web fonts and window size change the tabs' widths.
+    const observer = new ResizeObserver(place)
+    if (nav.current) observer.observe(nav.current)
+    return () => observer.disconnect()
+  }, [tab])
+
+  return (
+    <nav ref={nav} role="tablist" aria-label="Settings sections" className="relative -mx-1 mb-6 flex gap-1 overflow-x-auto border-b border-border px-1">
+      {TABS.map((t) => (
+        <Link
+          key={t.id}
+          to="/dashboard/settings"
+          search={t.id === 'general' ? {} : { tab: t.id }}
+          role="tab"
+          aria-selected={tab === t.id}
+          className={cn(
+            'shrink-0 px-3 py-2 text-sm whitespace-nowrap',
+            tab === t.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+            // Until the sliding underline is measured (the server-rendered page), the tab draws its own.
+            tab === t.id && !bar && 'shadow-[inset_0_-2px_0_var(--primary)]',
+          )}
+        >
+          {t.label}
+        </Link>
+      ))}
+      {bar && (
+        <span
+          aria-hidden="true"
+          data-motion={bar.moved ? '' : undefined}
+          className="tab-bar pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-primary"
+          style={{ width: bar.width, transform: `translateX(${bar.left}px)` }}
+        />
+      )}
+    </nav>
+  )
+}
 
 // One setting: what it is on the left (with the env variable that controls
 // it), its value on the right.

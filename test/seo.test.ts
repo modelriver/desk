@@ -12,7 +12,7 @@ const value = (head: ReturnType<typeof pageHead>, key: string) => {
 
 test('every page gets a title, description, canonical, Open Graph and Twitter tags', () => {
   const head = pageHead({ ...site, path: '/articles/billing', title: 'Billing', description: 'Plans and invoices' })
-  assert.equal(value(head, 'title'), 'Billing | Acme Help')
+  assert.equal(value(head, 'title'), 'Billing — Acme Help')
   assert.equal(value(head, 'description'), 'Plans and invoices')
   assert.equal(value(head, 'og:type'), 'website')
   assert.equal(value(head, 'og:title'), 'Billing')
@@ -34,8 +34,9 @@ test('keywords are de-duplicated and blanks dropped', () => {
   assert.equal(metaOf(pageHead({ ...site, path: '/x', title: 'X' }), 'keywords'), undefined)
 })
 
-test('the home page is titled with the brand alone', () => {
+test('the home page is titled with the brand alone, or its own title from Settings', () => {
   assert.equal(value(pageHead({ ...site, path: '/', title: 'Acme Help' }), 'title'), 'Acme Help')
+  assert.equal(value(pageHead({ ...site, path: '/', home: true, title: 'Acme Help Center: answers about billing' }), 'title'), 'Acme Help Center: answers about billing')
 })
 
 test('without APP_URL nothing absolute is guessed', () => {
@@ -124,8 +125,14 @@ test('the sitemap lists each section and subsection once, dated by its newest ar
 })
 
 test('pages read the brand and APP_URL from the root route', () => {
-  assert.deepEqual(siteFrom([{ routeId: '__root__', loaderData: { brandName: 'Acme Help', siteUrl: 'https://help.acme.test' } }, { routeId: '/' }]), site)
-  assert.deepEqual(siteFrom([]), { brandName: 'Help Center', siteUrl: null })
+  assert.deepEqual(siteFrom([{ routeId: '__root__', loaderData: { brandName: 'Acme Help', siteUrl: 'https://help.acme.test' } }, { routeId: '/' }]), {
+    ...site,
+    homeTitle: null,
+    description: null,
+  })
+  assert.deepEqual(siteFrom([]), { brandName: 'Help Center', siteUrl: null, homeTitle: null, description: null })
+  const seo = { homeTitle: 'Acme Help Center', description: 'Answers about Acme.' }
+  assert.deepEqual(siteFrom([{ routeId: '__root__', loaderData: { ...site, seo } }]), { ...site, ...seo })
 })
 
 test('pages without a description get one from their content', () => {

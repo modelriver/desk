@@ -7,7 +7,7 @@ A small, self-hostable support app:
 - **Chat widget.** Visitors ask questions and AI answers stream in token by token over websockets. Answers link to the help-center articles they draw on.
 - **Help center.** Public Markdown articles rendered as pages.
 - **Integrations.** Optional, read-only connectors for **Shopify**, **Stripe**, **Cal.com** and your own API (**Custom HTTP**). Once a visitor proves their email, the AI can answer "where's my order?", "when does my plan renew?" or "when is my appointment?" from their own records. See [Integrations](#integrations).
-- **Team dashboard.** Sign in, read every conversation, take over from the AI and reply as a human, manage users (admin/agent) and upload data files. Admins also get a **Settings** page showing whether the AI is connected, how much of the AI budget is used, who hasn't set up two-factor, whether the proxy settings look right, and where each setting comes from.
+- **Team dashboard.** Sign in, read every conversation, take over from the AI and reply as a human, manage users (admin/agent) and upload data files. Admins also get a **Settings** page to change the logo, colours, fonts, page titles, description and favicon, and showing whether the AI is connected, how much of the AI budget is used, who hasn't set up two-factor, whether the proxy settings look right, and where each setting comes from.
 - **Pause the chat.** **Settings → Chat assistant** turns the chat off for visitors at once, with no restart: the chat button, the home page's question box and the articles' "Still stuck?" box disappear, the embeddable `/widget` shows a short "Chat is paused" note with a link to the articles, and new chats and messages are refused. Articles and search keep working. Who changed it, and when, shows there and in the admin audit log.
 
 It is a reference app for ModelRiver, not a full CRM. ModelRiver does the heavy lifting (model gateway, retries and fallbacks, streaming, conversation sessions), so this repo stays small.
@@ -356,6 +356,13 @@ The app uses only functional cookies; there's no tracking or analytics.
 - **Embedded widget.** In production the visitor cookies are `SameSite=None; Secure; Partitioned`, so the embedded `/widget` keeps its conversation inside an iframe on another site. The cookie is partitioned per embedding site, and cross-site requests are still rejected.
 
 ## Customize the look
+
+The quickest way is **Settings** in the dashboard, which applies at once with no restart:
+
+- **Appearance:** the header logo (SVG preferred, shown 26 px tall, or a PNG at least 52 px tall) and an optional dark-mode version, an option to hide the name beside it, one brand colour (buttons, links and highlights in light and dark mode), the body and heading fonts (from a short list on Google Fonts) and the corner style.
+- **SEO:** the name, added to every page's title as "Page — Name"; the home page's own title and meta description; and the favicon (a square SVG, or a 512 × 512 PNG).
+
+These are saved in the database and laid over `support.config.json`, which still sets the defaults and everything else. **Reset to defaults** goes back to the file.
 
 Colours, fonts, corner radius, the brand name and logo live in [`support.config.json`](support.config.json). Edit it and restart the app. To keep your settings outside the repo (for example next to your data), point `SUPPORT_CONFIG` at another file. Anything you leave out uses the defaults in [`src/lib/site-config.ts`](src/lib/site-config.ts).
 

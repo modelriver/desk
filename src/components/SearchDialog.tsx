@@ -281,7 +281,9 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
           </>
         ) : results ? (
           <p className="px-3 py-8 text-center text-sm text-muted-foreground">Type to search every article.</p>
-        ) : null}
+        ) : (
+          <ListSkeleton />
+        )}
       </div>
 
       <div className="flex items-center gap-4 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
@@ -301,6 +303,29 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
         )}
       </div>
     </dialog>
+  )
+}
+
+// Until the first answer arrives: the sections list's shape, so the window
+// opens at its size instead of growing when the list lands. It pulses gently
+// (data-motion opts it out of the no-motion rule; reduced motion keeps it still).
+// Row heights match the real list (a 26 px label, 40 px rows).
+const SKELETON_ROWS = [42, 58, 48, 56, 40, 52, 46, 30, 44]
+
+function ListSkeleton() {
+  return (
+    <div data-motion="" aria-busy="true" aria-label="Loading" className="animate-pulse">
+      <span className="flex h-[26px] items-start px-3 pt-1.5">
+        <span className="h-2.5 w-24 rounded bg-muted" />
+      </span>
+      {SKELETON_ROWS.map((width, i) => (
+        <span key={i} className="flex h-10 items-center gap-3 px-3">
+          <span className="size-4 shrink-0 rounded bg-muted" />
+          <span className="h-3 rounded bg-muted" style={{ width: `${width}%` }} />
+          <span className="ml-auto h-2.5 w-14 shrink-0 rounded bg-muted" />
+        </span>
+      ))}
+    </div>
   )
 }
 

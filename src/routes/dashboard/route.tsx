@@ -84,7 +84,7 @@ function useWaitingCount(): number {
 
 function DashboardLayout() {
   const { user } = Route.useRouteContext()
-  const { brandName, logo } = root.useLoaderData()
+  const { brandName, logo, showName } = root.useLoaderData()
   const router = useRouter()
   const logout = useServerFn(signOut)
   const waiting = useWaitingCount()
@@ -93,9 +93,9 @@ function DashboardLayout() {
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[15rem_1fr]">
       <aside className="flex flex-col gap-1 border-b border-border bg-muted/40 p-3 md:sticky md:top-0 md:h-dvh md:border-r md:border-b-0">
-        <Link to="/dashboard" className="mb-3 flex items-center gap-2.5 px-2 py-1.5 font-semibold tracking-tight">
+        <Link to="/dashboard" className="mb-3 flex min-w-0 items-center gap-2.5 px-2 py-1.5 font-semibold tracking-tight" aria-label={showName ? undefined : brandName}>
           <BrandMark logo={logo} size={24} />
-          <span className="truncate">{brandName}</span>
+          {showName && <span className="truncate">{brandName}</span>}
         </Link>
         <nav className="flex gap-1 overflow-x-auto md:flex-col" aria-label="Dashboard">
           <NavItem

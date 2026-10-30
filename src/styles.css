@@ -144,9 +144,17 @@
   animation: bar-in 0.2s ease-out;
 }
 
+/* Settings tabs: the underline glides to the chosen tab. */
+.tab-bar {
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0, 0, 1),
+    width 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-motion] {
     animation: none !important;
+    transition: none !important;
   }
 }
 
@@ -370,6 +378,12 @@
 }
 .prose th {
   font-weight: 600;
+}
+/* Whole words in cells: on a phone a wide table scrolls sideways instead of
+   splitting "pricing" into "pricin g". */
+.prose :is(th, td) {
+  overflow-wrap: break-word;
+  min-width: 5.5em;
 }
 .prose img {
   max-width: 100%;

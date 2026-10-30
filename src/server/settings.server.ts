@@ -8,6 +8,8 @@ import { listDataFiles } from './content.server.ts'
 import { rateLimitHits } from './rate-limit.server.ts'
 import { LOCK_AFTER_FAILURES } from './account-security.server.ts'
 import { getSiteConfig, siteConfigPath } from './site-config.server.ts'
+import { assetUrl, brandingChange, readAsset, type StoredAsset } from './branding.server.ts'
+import type { BrandAssetKind } from '../lib/brand-assets.ts'
 import { aiActivity, appVersion, checkModelRiver, proxyWarning } from './status.server.ts'
 import { emailStatus, lastEmailResult } from './email.server.ts'
 import { mediaStatus } from './media.server.ts'
@@ -18,8 +20,36 @@ const DAY = 24 * 60 * MINUTE
 
 type Member = { name: string; email: string }
 
-// Everything the admin Settings page shows. Read-only: these come from the
-// environment and support.config.json. The API key itself is never returned.
+// The Appearance and SEO tabs: what's saved, what support.config.json says
+// underneath (shown as placeholders, and what "Reset" goes back to), and the
+// uploaded images.
+export function brandingSettings() {
+  const { branding, fileConfig, config, logo } = getSiteConfig()
+  const image = (kind: BrandAssetKind, asset: StoredAsset | null) =>
+    asset && { url: assetUrl(kind, asset), type: asset.type, width: asset.width, height: asset.height, updatedAt: asset.updatedAt, updatedBy: asset.updatedBy }
+  return {
+    saved: branding,
+    name: config.brand.name,
+    defaults: {
+      name: fileConfig.brand.name,
+      brandColor: fileConfig.theme.light.primary,
+      // A support.config.json logo shows when nothing is uploaded.
+      configLogo: Boolean(fileConfig.brand.logo),
+    },
+    logo: image('logo', readAsset('logo')),
+    logoDark: image('logo-dark', readAsset('logo-dark')),
+    favicon: image('favicon', readAsset('favicon')),
+    // What each colour scheme shows now (uploads, else support.config.json), and
+    // the scheme's colours, so the previews can show both whatever the admin's own scheme.
+    current: { logo, light: config.theme.light, dark: config.theme.dark },
+    appUrl: env.appUrl,
+    changed: brandingChange(),
+  }
+}
+
+// Everything the admin Settings page shows. Mostly read-only: these come from
+// the environment and support.config.json; branding comes from brandingSettings.
+// The API key itself is never returned.
 export async function collectSettings({ recheck = false } = {}) {
   const db = getDb()
 
@@ -38,6 +68,7 @@ export async function collectSettings({ recheck = false } = {}) {
   const [connection, usage] = await Promise.all([checkModelRiver({ force: recheck }), monthUsage(currentMonth())])
 
   return {
+    branding: brandingSettings(),
     chat: chatStatus(db),
     ai: {
       connection,

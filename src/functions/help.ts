@@ -43,10 +43,15 @@ export const voteArticle = createServerFn({ method: 'POST' })
 
 // Everything the root layout needs from support.config.json and env.
 export const getSiteConfig = createServerFn({ method: 'GET' }).handler(async () => {
-  const { config, css, logo } = readSiteConfig()
+  const { config, css, logo, favicon, showName, seo } = readSiteConfig()
   return {
     repoUrl: env.publicRepoUrl,
     brandName: config.brand.name,
+    // Written beside the logo in the header (off for a logo that spells it out).
+    showName,
+    // The home page's title and description from Settings (null for the defaults).
+    seo,
+    favicon,
     // For canonical links and structured data (see siteUrl).
     siteUrl: siteUrl(),
     // The browser's own bars (mobile Safari, Chrome) in the page's background colour.

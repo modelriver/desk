@@ -10,7 +10,7 @@ export const env = {
   workflow: process.env.MODELRIVER_WORKFLOW ?? 'support_assistant',
   dataDir,
   databasePath: path.resolve(process.env.DATABASE_PATH ?? './var/support.db'),
-  // Where "Open source, built on ModelRiver" links (help center footer, chat widget).
+  // Where "Powered by Desk" links (help center footer, chat widget).
   publicRepoUrl: process.env.PUBLIC_REPO_URL || 'https://modelriver.com/desk',
   production: process.env.NODE_ENV === 'production',
   // Reverse proxies in front of the app that append to X-Forwarded-For

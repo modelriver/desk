@@ -16,8 +16,11 @@ export const Route = createFileRoute('/')({
     return pageHead({
       ...site,
       path: '/',
-      title: site.brandName,
-      description: `Guides and answers from ${site.brandName}. Search the help articles by topic, or ask the assistant and reach our team when you need a person.`,
+      home: true,
+      title: site.homeTitle ?? site.brandName,
+      description:
+        site.description ??
+        `Guides and answers from ${site.brandName}. Search the help articles by topic, or ask the assistant and reach our team when you need a person.`,
       keywords: [site.brandName, 'help center', 'support', 'guides', 'FAQ'],
       structured: site.siteUrl ? [websiteData(site.siteUrl, site.brandName)] : [],
     })

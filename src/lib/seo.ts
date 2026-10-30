@@ -2,6 +2,7 @@
 
 import { escapeHtml } from './escape.ts'
 import { plainText } from './content-core.ts'
+import { pageTitle } from './branding.ts'
 
 export interface SitemapEntry {
   path: string
@@ -72,8 +73,9 @@ export interface PageSeo {
   siteUrl: string | null
   // The page's own path, e.g. /articles/billing.
   path: string
-  // Without the brand; the home page passes the brand itself.
+  // Without the brand: it's added as "Title — brand". The home page's title is used as it is.
   title: string
+  home?: boolean
   description?: string
   type?: 'website' | 'article'
   // Search results and the like: kept out of search engines, links still followed.
@@ -131,14 +133,22 @@ export function sectionDescription(title: string, articleTitles: string[], descr
   return fullDescription(description, list)
 }
 
-// The brand and APP_URL, from the root route's loader, for a page's head().
+// The brand, APP_URL and the home page's title and description from Settings,
+// from the root route's loader, for a page's head().
 export function siteFrom(matches: ReadonlyArray<{ routeId: string; loaderData?: unknown }>) {
-  const root = matches.find((m) => m.routeId === '__root__')?.loaderData as { brandName?: string; siteUrl?: string | null } | undefined
-  return { brandName: root?.brandName ?? 'Help Center', siteUrl: root?.siteUrl ?? null }
+  const root = matches.find((m) => m.routeId === '__root__')?.loaderData as
+    | { brandName?: string; siteUrl?: string | null; seo?: { homeTitle: string | null; description: string | null } }
+    | undefined
+  return {
+    brandName: root?.brandName ?? 'Help Center',
+    siteUrl: root?.siteUrl ?? null,
+    homeTitle: root?.seo?.homeTitle ?? null,
+    description: root?.seo?.description ?? null,
+  }
 }
 
 export function pageHead(p: PageSeo) {
-  const title = p.title === p.brandName ? p.title : `${p.title} | ${p.brandName}`
+  const title = p.home ? p.title : pageTitle(p.title, p.brandName)
   const url = p.siteUrl ? p.siteUrl + p.path : null
   const description = p.description?.trim() || undefined
   // Once each, whatever the case, as first written.

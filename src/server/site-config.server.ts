@@ -1,11 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { parseSiteConfig, SiteConfigError, themeCss, type Logo, type SiteConfig } from '../lib/site-config.ts'
+import { applyBranding, type Branding } from '../lib/branding.ts'
 import { faviconSvg } from '../lib/favicon.ts'
+import { assetUrl, brandingVersion, readAsset, readBranding } from './branding.server.ts'
 
 // support.config.json in the working directory, or the file named by
 // SUPPORT_CONFIG. Missing file = defaults. Read once per process: restart to
-// pick up changes.
+// pick up changes. Branding saved in Settings is layered on top (getSiteConfig).
 export function siteConfigPath(): string {
   return path.resolve(process.env.SUPPORT_CONFIG ?? 'support.config.json')
 }
@@ -48,15 +50,74 @@ function readLogos(config: SiteConfig, configFile: string): Logo {
   }
 }
 
-let cached: { config: SiteConfig; css: string; logo: Logo } | undefined
+export interface ResolvedSiteConfig {
+  // support.config.json with the Settings page's branding on top.
+  config: SiteConfig
+  // support.config.json alone, for "Reset" and the Settings form's placeholders.
+  fileConfig: SiteConfig
+  branding: Branding
+  css: string
+  logo: Logo
+  // The tab icon: the uploaded favicon, else the logo; null for the Desk bot at /favicon.svg.
+  favicon: { href: string; type: string } | null
+  // Write the name beside the logo in the header (always, without a logo).
+  showName: boolean
+  // The home page's title and description from Settings, or null for the defaults.
+  seo: { homeTitle: string | null; description: string | null }
+}
 
-export function getSiteConfig() {
-  if (!cached) {
+let cached: { version: number; value: ResolvedSiteConfig } | undefined
+let fileCache: { config: SiteConfig; logo: Logo } | undefined
+
+// The header logo for each colour scheme. An uploaded logo replaces
+// support.config.json's (and its dark version, which was made to match it);
+// an uploaded dark-mode logo is used over whichever light one shows. A dark
+// logo alone has nothing to pair with, so the Desk bot stays.
+export function resolveLogo(uploaded: string | null, uploadedDark: string | null, fromFile: Logo): Logo {
+  if (uploaded) return { light: uploaded, dark: uploadedDark }
+  if (fromFile) return { light: fromFile.light, dark: uploadedDark ?? fromFile.dark }
+  return null
+}
+
+// support.config.json is read once per process (restart to pick up changes);
+// what Settings saves applies at once.
+export function getSiteConfig(): ResolvedSiteConfig {
+  const version = brandingVersion()
+  if (cached?.version === version) return cached.value
+  if (!fileCache) {
     const file = siteConfigPath()
     const config = readSiteConfigFile(file)
-    cached = { config, css: themeCss(config), logo: readLogos(config, file) }
+    fileCache = { config, logo: readLogos(config, file) }
   }
-  return cached
+  const branding = readBranding()
+  const config = applyBranding(fileCache.config, branding)
+  const logoAsset = readAsset('logo')
+  const darkAsset = readAsset('logo-dark')
+  const faviconAsset = readAsset('favicon')
+  const logo = resolveLogo(
+    logoAsset && assetUrl('logo', logoAsset),
+    darkAsset && assetUrl('logo-dark', darkAsset),
+    fileCache.logo,
+  )
+  const value: ResolvedSiteConfig = {
+    config,
+    fileConfig: fileCache.config,
+    branding,
+    css: themeCss(config),
+    logo,
+    favicon: faviconAsset
+      ? { href: assetUrl('favicon', faviconAsset), type: faviconAsset.type }
+      : logoAsset
+        ? { href: assetUrl('logo', logoAsset), type: logoAsset.type }
+        : logo
+          ? { href: logo.light, type: 'image/svg+xml' }
+          : null,
+    // Hiding the name needs a logo to take its place; with the Desk bot it always shows.
+    showName: branding.showName !== false || logo === null,
+    seo: { homeTitle: branding.homeTitle ?? null, description: branding.description ?? null },
+  }
+  cached = { version, value }
+  return value
 }
 
 // For server.mjs: fail at startup, not on the first page view, if a logo is missing or invalid.

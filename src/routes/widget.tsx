@@ -20,7 +20,7 @@ export const Route = createFileRoute('/widget')({
 })
 
 function WidgetPage() {
-  const { repoUrl, brandName, logo, chatEnabled } = root.useLoaderData()
+  const { repoUrl, brandName, chatEnabled } = root.useLoaderData()
   const { identity } = Route.useSearch()
   // Kept in memory and taken out of the address bar, so it isn't in the
   // history or sent on as a referrer when the visitor follows a link.
@@ -46,5 +46,5 @@ function WidgetPage() {
       </div>
     )
   }
-  return <ChatWidget repoUrl={repoUrl} brandName={brandName} logo={logo} embedded identityToken={token} />
+  return <ChatWidget repoUrl={repoUrl} brandName={brandName} embedded identityToken={token} />
 }

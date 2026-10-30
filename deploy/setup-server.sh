@@ -183,7 +183,9 @@ export NEEDRESTART_MODE=a
 # --- 1. System packages ---
 
 step "Installing system packages"
-PACKAGES="ca-certificates curl git rsync openssl xz-utils util-linux"
+# libatomic1: the official Node.js binaries need it, and minimal cloud images
+# (Lightsail, for one) leave it out.
+PACKAGES="ca-certificates curl git rsync openssl xz-utils util-linux libatomic1"
 [ "$WITH_NGINX" = 1 ] && PACKAGES="$PACKAGES nginx"
 [ "$WITH_TLS" = 1 ] && PACKAGES="$PACKAGES certbot python3-certbot-nginx"
 [ "$FIREWALL" = 1 ] && PACKAGES="$PACKAGES ufw"
@@ -266,7 +268,8 @@ else
     tar -xJf "$TMP/$NODE_NAME.tar.xz" -C "$NODE_ROOT"
     ln -sfn "$NODE_ROOT/$NODE_NAME" "$NODE_ROOT/current"
     for bin in node npm npx; do ln -sf "$NODE_ROOT/current/bin/$bin" "/usr/bin/$bin"; done
-    note "Installed $(/usr/bin/node --version) as /usr/bin/node."
+    INSTALLED_NODE="$(/usr/bin/node --version 2>&1)" || die "Node.js was installed but won't start: $INSTALLED_NODE"
+    note "Installed $INSTALLED_NODE as /usr/bin/node."
   fi
 fi
 

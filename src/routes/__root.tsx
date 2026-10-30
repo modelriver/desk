@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { createRootRoute, HeadContent, Link, Outlet, Scripts, useRouterState } from '@tanstack/react-router'
 import { ChatWidget } from '../components/ChatWidget.tsx'
 import { BrandMark } from '../components/BrandMark.tsx'
+import { LOGO_HEIGHT, PHONE_LOGO_HEIGHT } from '../lib/brand-assets.ts'
 import { HeaderSearch } from '../components/HeaderSearch.tsx'
 import { buttonClass } from '../components/ui.tsx'
 import { getSiteConfig } from '../functions/help.ts'
@@ -17,18 +18,19 @@ export const Route = createRootRoute({
       { rel: 'preconnect', href: new URL(href).origin, crossOrigin: 'anonymous' as const },
       { rel: 'stylesheet', href },
     ])
+    const icon = loaderData?.favicon
     return {
       meta: [
         { charSet: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { title: loaderData?.brandName ?? 'Help Center' },
-        { name: 'description', content: 'Guides, answers and support.' },
+        { title: loaderData?.seo.homeTitle ?? loaderData?.brandName ?? 'Help Center' },
+        { name: 'description', content: loaderData?.seo.description ?? 'Guides, answers and support.' },
       ],
       links: [
         ...fontLinks,
         { rel: 'stylesheet', href: appCss },
-        // The tab icon: your logo when support.config.json has one, else the Desk bot.
-        { rel: 'icon', type: 'image/svg+xml', href: loaderData?.logo?.light ?? '/favicon.svg' },
+        // The favicon from Settings, else the logo, else the Desk bot (see site-config.server.ts).
+        { rel: 'icon', type: icon?.type ?? 'image/svg+xml', href: icon?.href ?? '/favicon.svg' },
       ],
       // Theme variables from support.config.json; rendered after the stylesheet so they apply.
       styles: loaderData ? [{ children: loaderData.themeCss }] : [],
@@ -64,7 +66,7 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function RootLayout() {
-  const { repoUrl, brandName, logo, chatEnabled } = Route.useLoaderData()
+  const { repoUrl, brandName, logo, showName, chatEnabled } = Route.useLoaderData()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // The dashboard, sign-in and the embeddable /widget page have their own chrome.
   const publicPage = !pathname.startsWith('/dashboard') && pathname !== '/login' && pathname !== '/widget'
@@ -73,9 +75,10 @@ function RootLayout() {
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-            <BrandMark logo={logo} size={26} />
-            {brandName}
+          <Link to="/" className="flex min-w-0 items-center gap-2.5 font-semibold tracking-tight" aria-label={showName ? undefined : brandName}>
+            <BrandMark logo={logo} size={26} logoHeight={LOGO_HEIGHT} phoneLogoHeight={PHONE_LOGO_HEIGHT} />
+            {/* Hidden when the logo already spells the name; the link keeps it for screen readers. */}
+            {showName && <span className="truncate">{brandName}</span>}
           </Link>
           <nav className="ml-auto flex items-center gap-2 text-sm">
             {/* /articles has its own, larger search box; ⌘K still works there. */}
@@ -98,12 +101,12 @@ function RootLayout() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-xs text-muted-foreground sm:px-6">
           <span>{brandName}</span>
           <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">
-            Open source, built on ModelRiver
+            Powered by Desk
           </a>
         </div>
       </footer>
       {/* Paused from Settings: no chat button at all. */}
-      {chatEnabled && <ChatWidget repoUrl={repoUrl} brandName={brandName} logo={logo} />}
+      {chatEnabled && <ChatWidget repoUrl={repoUrl} brandName={brandName} />}
     </div>
   )
 }
