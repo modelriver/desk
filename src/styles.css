@@ -132,6 +132,18 @@
 .typing-dot:nth-child(3) {
   animation-delay: 0.3s;
 }
+/* A bar that appears at the top of a list (the Knowledge page's selection
+   and Arrange bars): a short slide down into place. */
+@keyframes bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.bar-in {
+  animation: bar-in 0.2s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-motion] {
     animation: none !important;
@@ -255,8 +267,12 @@
  * plugin out of the dependency list.
  */
 .prose {
-  font-family: var(--app-font-serif);
+  font-family: var(--app-font-sans);
   overflow-wrap: anywhere;
+}
+/* Text in sans for easy reading; headings keep the serif. */
+.prose :is(h1, h2, h3) {
+  font-family: var(--app-font-serif);
 }
 .prose > :first-child {
   margin-top: 0;
@@ -342,7 +358,6 @@
 .prose table {
   width: 100%;
   border-collapse: collapse;
-  font-family: var(--app-font-sans);
   font-size: 0.9em;
   display: block;
   overflow-x: auto;
@@ -366,10 +381,20 @@
   margin: 2em 0;
 }
 
-/* Long-form article pages read a little larger. */
+/* Long-form articles (and the editor, which previews them): 16px body,
+   headings scaled to it. */
 .prose-article {
-  font-size: 1.125rem;
-  line-height: 1.7;
+  font-size: 1rem;
+  line-height: 1.65;
+}
+.prose-article h1 {
+  font-size: 1.75rem;
+}
+.prose-article h2 {
+  font-size: 1.25rem;
+}
+.prose-article h3 {
+  font-size: 1.0625rem;
 }
 /* Linked sections land below the sticky header. */
 .prose-article :is(h1, h2, h3, h4) {
@@ -401,7 +426,7 @@
 .editor-title {
   width: 100%;
   font-family: var(--app-font-serif);
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.01em;

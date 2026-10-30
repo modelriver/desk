@@ -54,6 +54,13 @@ export function hasLeadingH1(body: string): boolean {
   return LEADING_H1.test(body)
 }
 
+// An article's own "# Title" line and the rest, so the page can put things
+// (the date) between them.
+export function splitLeadingH1(body: string): { heading: string | null; rest: string } {
+  const match = LEADING_H1.exec(body)
+  return match ? { heading: match[1]!, rest: body.slice(match[0].length) } : { heading: null, rest: body }
+}
+
 export function articleBodyForEditor(text: string, file: string): ArticleFields {
   if (file.endsWith('.txt')) return { title: file.slice(file.lastIndexOf('/') + 1), description: '', body: text }
   const { data, body } = parseFrontMatter(text)

@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { folderOf, helpPath, resolveHelpPath } from '../src/lib/help-path.ts'
+import { ARTICLES_PATH, articleUrl, folderOf, helpPath, resolveHelpPath } from '../src/lib/help-path.ts'
 import { groupByCategory, toDoc } from '../src/lib/content-core.ts'
 
-// Help-center URLs carry an article's folders: /help/billing/refunds.
+// Help-center URLs carry an article's folders: /articles/billing/refunds.
 const articles = [
   { slug: 'intro', path: 'intro' },
   { slug: 'refunds', path: 'billing/refunds' },
@@ -44,4 +44,10 @@ test('sections and subsections know their own pages', () => {
   assert.equal(section!.subsections[0]!.path, 'billing/invoices')
   const [legacy] = groupByCategory([{ slug: 'a', path: 'a', title: 'A', description: '', category: 'General', subcategory: null, order: 1 }])
   assert.equal(legacy!.path, null)
+})
+
+test('the help center lives at /articles', () => {
+  assert.equal(ARTICLES_PATH, '/articles')
+  assert.equal(articleUrl('billing/refunds'), '/articles/billing/refunds')
+  assert.equal(articleUrl(helpPath('billing/refunds.md', 'refunds')), '/articles/billing/refunds')
 })

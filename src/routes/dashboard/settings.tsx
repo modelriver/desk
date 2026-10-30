@@ -1,16 +1,19 @@
 import { useState, type ReactNode } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { getMonthUsage, getSettings, sendTestEmail } from '../../functions/settings.ts'
+import { getMonthUsage, getSettings, sendTestEmail, setChatAvailability } from '../../functions/settings.ts'
+import { testImageStorage } from '../../functions/media.ts'
+import { formatBytes } from '../../lib/media-core.ts'
 import { LoadError } from '../../components/LoadError.tsx'
 import { RefreshIcon } from '../../components/icons.tsx'
-import { Badge, Button, Notice, PageHeader, Section, Select } from '../../components/ui.tsx'
+import { Badge, Button, Notice, PageHeader, Section, Select, Switch } from '../../components/ui.tsx'
 import { RelativeTime } from '../../components/RelativeTime.tsx'
 import { cn } from '../../lib/cn.ts'
 import { BusyIcon } from '../../components/BusyIcon.tsx'
 import { errorMessage } from '../../lib/errors.ts'
 
 export const Route = createFileRoute('/dashboard/settings')({
+  head: () => ({ meta: [{ title: 'Settings · Dashboard' }] }),
   beforeLoad: ({ context }) => {
     if (context.user.role !== 'admin') throw redirect({ to: '/dashboard' })
   },
@@ -34,8 +37,9 @@ const CONNECTION = {
   error: { label: 'Error', tone: 'bad' },
 } as const
 
-// Read-only: everything here comes from the server's environment and
-// support.config.json, so the page says where to change it.
+// Mostly read-only: what comes from the server's environment and
+// support.config.json says where to change it. The chat switch at the top is
+// the one setting changed here.
 function Settings() {
   const loaded = Route.useLoaderData()
   const fetchSettings = useServerFn(getSettings)
@@ -63,6 +67,7 @@ function Settings() {
       />
 
       <div className="grid gap-5">
+        <ChatSwitch status={s.chat} onChange={(chat) => setData((d) => ({ ...d, chat }))} />
         <Section title="AI connection">
           <div className="flex flex-wrap items-start gap-3 border-b border-border px-5 py-4">
             <span
@@ -107,6 +112,8 @@ function Settings() {
         </Section>
 
         <EmailSection email={s.email} onSent={() => void fetchSettings({ data: { recheck: false } }).then(setData)} />
+
+        <ImagesSection media={s.media} onTested={() => void fetchSettings({ data: { recheck: false } }).then(setData)} />
 
         <UsageSection initial={s.usage} since={s.usageSince} />
 
@@ -392,6 +399,87 @@ function hours(h: number): string {
 }
 
 // Which email provider is set up, what's missing, and a test send.
+// Where images uploaded into articles go: this server, or a bucket set up in the environment.
+function ImagesSection({ media, onTested }: { media: Data['media']; onTested: () => void }) {
+  const test = useServerFn(testImageStorage)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const bucket = media.kind === 's3' ? media : null
+  const stored = media.count === 1 ? '1 image' : `${media.count.toLocaleString()} images`
+
+  return (
+    <Section title="Images" description="Pictures pasted, dropped or uploaded into articles. Anyone with an image’s address can open it, drafts included.">
+      <div className="flex flex-wrap items-start gap-3 border-b border-border px-5 py-4">
+        <span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-success" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">{bucket ? 'S3-compatible storage' : 'On this server'}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {bucket
+              ? `Uploaded to ${bucket.bucket} and loaded from ${bucket.publicUrl}.`
+              : 'Saved in the media folder and served at /media/. To use S3, R2 or similar, set the MEDIA_S3_ settings and restart.'}
+          </p>
+          {result && (
+            <div className="mt-2">
+              <Notice tone={result.ok ? 'success' : 'error'}>{result.text}</Notice>
+            </div>
+          )}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true)
+            setResult(null)
+            try {
+              const res = await test()
+              if (res.reachable === false) {
+                setResult({ ok: false, text: `Uploaded, but ${res.url} couldn’t be loaded${res.status ? ` (${res.status})` : ''}. Check that MEDIA_PUBLIC_URL serves the bucket publicly.` })
+              } else {
+                setResult({ ok: true, text: bucket ? `Uploaded and loaded ${res.url}.` : `Saved a test image at ${res.url}.` })
+                // Refresh the count below.
+                onTested()
+              }
+            } catch (err) {
+              setResult({ ok: false, text: errorMessage(err, 'The test upload failed.') })
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <BusyIcon busy={busy} size={14} />
+          Test upload
+        </Button>
+      </div>
+      {bucket && (
+        <>
+          <Row label="Bucket" setting="MEDIA_S3_BUCKET">
+            <Code>
+              {bucket.bucket}
+              {bucket.prefix && `/${bucket.prefix}`}
+            </Code>
+          </Row>
+          <Row label="Endpoint" setting="MEDIA_S3_ENDPOINT">
+            <Code>{bucket.endpoint}</Code>
+          </Row>
+          <Row label="Region" setting="MEDIA_S3_REGION">
+            <Code>{bucket.region}</Code>
+          </Row>
+          <Row label="Public address" setting="MEDIA_PUBLIC_URL">
+            <Code>{bucket.publicUrl}</Code>
+          </Row>
+        </>
+      )}
+      {(!bucket || media.count > 0) && (
+        <Row label={bucket ? 'Older images on this server' : 'Media folder'} hint={bucket ? 'Still served at /media/.' : undefined} setting="MEDIA_DIR">
+          <Code>{media.dir}</Code>
+          <span className="block text-xs text-muted-foreground">{media.count ? `${stored}, ${formatBytes(media.bytes)}` : 'None yet'}</span>
+        </Row>
+      )}
+    </Section>
+  )
+}
+
 function EmailSection({ email, onSent }: { email: Data['email']; onSent: () => void }) {
   const test = useServerFn(sendTestEmail)
   const [busy, setBusy] = useState(false)
@@ -445,8 +533,8 @@ function EmailSection({ email, onSent }: { email: Data['email']; onSent: () => v
       <Row label="Sender" setting="EMAIL_FROM">
         {email.from ? <Code>{email.from}</Code> : <Muted>Not set</Muted>}
       </Row>
-      <Row label="Links in emails" hint="The address people use to open this app." setting="APP_URL">
-        {email.appUrl ? <Code>{email.appUrl}</Code> : <Muted>Not set, so emails have no links</Muted>}
+      <Row label="This app’s address" hint="For links in emails, canonical links, the sitemap and search engines’ structured data." setting="APP_URL">
+        {email.appUrl ? <Code>{email.appUrl}</Code> : <Muted>Not set: emails have no links, pages no canonical links</Muted>}
       </Row>
       <Row label="Who gets notified">
         <span className="text-right">
@@ -464,6 +552,51 @@ function EmailSection({ email, onSent }: { email: Data['email']; onSent: () => v
           <Muted>None yet</Muted>
         )}
       </Row>
+    </Section>
+  )
+}
+
+// Turning the chat off and on for visitors, at once, without a restart.
+function ChatSwitch({ status, onChange }: { status: Data['chat']; onChange: (next: Data['chat']) => void }) {
+  const save = useServerFn(setChatAvailability)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const toggle = async (enabled: boolean) => {
+    setBusy(true)
+    setError(null)
+    try {
+      onChange(await save({ data: { enabled } }))
+    } catch (err) {
+      setError(errorMessage(err, 'Couldn’t change it. Please try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Section title="Chat assistant">
+      <div className="flex items-start gap-4 px-5 py-4">
+        <div className="min-w-0 flex-1">
+          <p id="chat-switch-label" className="text-sm font-medium">
+            {status.enabled ? 'Visitors can chat' : 'Chat is paused'}
+          </p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {status.enabled
+              ? 'Turn it off to hide the chat button everywhere, including the widget on other sites. Articles and search keep working.'
+              : 'The chat button and the home page’s question box are hidden, and new chats and messages are refused. Turn it back on any time.'}
+          </p>
+          {status.changedAt && (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {status.enabled ? 'Turned on' : 'Paused'} by {status.changedBy ?? 'someone'} <RelativeTime iso={status.changedAt} />
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="mt-1.5 text-xs text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+        <Switch checked={status.enabled} onChange={(on) => void toggle(on)} disabled={busy} aria-labelledby="chat-switch-label" className="mt-0.5" />
+      </div>
     </Section>
   )
 }

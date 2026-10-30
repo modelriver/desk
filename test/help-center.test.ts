@@ -72,6 +72,8 @@ test('an empty or filler-only query finds nothing', () => {
 
 test('extracts are plain text around the first match, trimmed on word boundaries', () => {
   assert.equal(plainText('**Bold** and [a link](https://x.test) with `code`'), 'Bold and a link with code')
+  assert.equal(plainText('Intro\n\n---\n\n***\n\n| A | B |\n| --- | :-: |\n| 1 | 2 |'), 'Intro A B 1 2')
+  assert.equal(plainText('---'), '')
   const long = `${'intro words '.repeat(40)}the export button is here ${'more words '.repeat(40)}`
   const s = snippetFor(long, 'export', 80)
   assert.match(s, /^….*export button.*…$/)
@@ -112,9 +114,9 @@ test('heading ids are plain ASCII, and headings with odd text stay safe', () => 
 })
 
 test('the sitemap lists absolute, escaped URLs with dates', () => {
-  const xml = sitemapXml('https://help.acme.test', [{ path: '/help/a&b', modifiedAt: '2026-10-26T10:00:00.000Z' }, { path: '/' }])
+  const xml = sitemapXml('https://help.acme.test', [{ path: '/articles/a&b', modifiedAt: '2026-10-26T10:00:00.000Z' }, { path: '/' }])
   assert.match(xml, /^<\?xml version="1.0"/)
-  assert.match(xml, /<loc>https:\/\/help\.acme\.test\/help\/a&amp;b<\/loc><lastmod>2026-10-26<\/lastmod>/)
+  assert.match(xml, /<loc>https:\/\/help\.acme\.test\/articles\/a&amp;b<\/loc><lastmod>2026-10-26<\/lastmod>/)
   assert.match(xml, /<loc>https:\/\/help\.acme\.test\/<\/loc><\/url>/)
 })
 
@@ -167,4 +169,14 @@ test('a subfolder becomes a subsection, in the order its articles come', () => {
 
 test('an article’s URL is its file name, whichever folder it sits in', () => {
   assert.equal(toDoc('billing/invoices/refunds.md', '# Refunds', 'public').slug, 'refunds')
+})
+
+test('the tab icon is the Desk bot in the theme’s colours, light and dark', async () => {
+  const { faviconSvg } = await import('../src/lib/favicon.ts')
+  const svg = faviconSvg({ ink: '#111111', paper: '#ffffff' }, { ink: 'oklch(0.9 0 0)', paper: '#171717' })
+  assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
+  assert.match(svg, /\.i\{fill:#111111\}\.p\{fill:#ffffff\}/)
+  assert.match(svg, /@media \(prefers-color-scheme:dark\)\{\.i\{fill:oklch\(0\.9 0 0\)\}/)
+  // A colour can't break out of the style block.
+  assert.doesNotMatch(faviconSvg({ ink: 'red}</style><script>x', paper: '#fff' }, { ink: '#000', paper: '#fff' }), /<script|<\/style><script/)
 })

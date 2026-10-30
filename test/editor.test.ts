@@ -38,6 +38,7 @@ test('formatting the editor offers survives the trip', () => {
     '---',
     '| A | B |\n| --- | --- |\n| 1 | 2 |',
     '![Alt text](https://example.com/a.png)',
+    `![](/media/${'a'.repeat(32)}.webp)`,
   ].join('\n\n')
   assert.ok(rendersSame(body, roundTrip(body)))
 })
@@ -57,17 +58,18 @@ test('rendersSame ignores formatting that doesn’t change the page', () => {
 })
 
 test('links: web, email and on-site only', () => {
-  for (const ok of ['https://example.com/x?y=1', 'http://a.b', 'mailto:help@example.com', '/help/billing', '#setup']) assert.ok(isAllowedHref(ok), ok)
+  for (const ok of ['https://example.com/x?y=1', 'http://a.b', 'mailto:help@example.com', '/articles/billing', '#setup']) assert.ok(isAllowedHref(ok), ok)
   for (const bad of ['javascript:alert(1)', 'JAVASCRIPT:alert(1)', 'data:text/html,x', '//evil.com', '/\\evil.com', 'vbscript:x', 'https://a b']) {
     assert.equal(isAllowedHref(bad), false, bad)
   }
   assert.equal(normalizeHref('example.com/docs'), 'https://example.com/docs')
   assert.equal(normalizeHref('help@example.com'), 'mailto:help@example.com')
-  assert.equal(normalizeHref('  /help/x '), '/help/x')
+  assert.equal(normalizeHref('  /articles/x '), '/articles/x')
   assert.equal(normalizeHref('javascript:alert(1)'), null)
   assert.equal(normalizeHref(''), null)
   assert.ok(isImageUrl('https://example.com/a.png'))
-  for (const bad of ['http://example.com/a.png', 'data:image/png;base64,AAAA', 'javascript:x']) assert.equal(isImageUrl(bad), false, bad)
+  assert.ok(isImageUrl(`/media/${'a'.repeat(32)}.webp`))
+  for (const bad of ['http://example.com/a.png', 'data:image/png;base64,AAAA', 'javascript:x', '/media/../desk.db']) assert.equal(isImageUrl(bad), false, bad)
 })
 
 test('word count skips Markdown syntax and code', () => {

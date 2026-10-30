@@ -44,6 +44,7 @@ import { onOpenChat } from '../lib/chat-bus.ts'
 import { deleteCookie, readCookie, writeCookie } from '../lib/client-cookie.ts'
 import { BusyIcon } from './BusyIcon.tsx'
 import { errorMessage } from '../lib/errors.ts'
+import { articleUrl } from '../lib/help-path.ts'
 
 interface UiMessage extends WidgetMessage {
   streaming?: boolean
@@ -794,7 +795,7 @@ export function ChatWidget({
         onFocus={prefetch}
         aria-busy={pendingOpen || undefined}
         data-motion={launcherIn ? '' : undefined}
-        className={cn('fixed right-5 bottom-5 z-50 size-14 rounded-full shadow-lg shadow-black/15', launcherIn && 'launcher-in')}
+        className={cn('fixed right-5 bottom-5 z-50 size-14 rounded-full', launcherIn && 'launcher-in')}
         aria-label="Open support chat"
       >
         <HelpBot size={36} inverted />
@@ -852,7 +853,7 @@ export function ChatWidget({
         !embedded && (closing ? 'chat-leave' : entrance && 'chat-enter'),
         embedded
           ? 'h-dvh w-full'
-          : 'fixed right-5 bottom-5 z-50 h-[min(640px,calc(100dvh-2.5rem))] w-[min(400px,calc(100vw-2.5rem))] rounded-2xl border border-border shadow-2xl shadow-black/15 max-sm:inset-2 max-sm:h-auto max-sm:w-auto',
+          : 'fixed right-5 bottom-5 z-50 h-[min(640px,calc(100dvh-2.5rem))] w-[min(400px,calc(100vw-2.5rem))] rounded-2xl border border-border max-sm:inset-2 max-sm:h-auto max-sm:w-auto',
       )}
     >
       <header className="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -1338,7 +1339,7 @@ function ChatMessage({ message, known }: { message: UiMessage; known: Map<string
             {sources.map((s) => (
               <a
                 key={s.slug}
-                href={`/help/${s.path}`}
+                href={articleUrl(s.path)}
                 className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary hover:text-foreground"
               >
                 <BookIcon size={12} />

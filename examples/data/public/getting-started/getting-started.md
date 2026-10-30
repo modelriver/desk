@@ -19,4 +19,4 @@ Click **New notebook** in the sidebar, give it a name and start typing. Notes sa
 
 ## Invite your team
 
-Open **Settings → Members** and click **Invite**. Invited people get an email and join with the **Editor** role by default. See [Roles and permissions](/help/getting-started/your-team/roles-and-permissions) for what each role can do.
+Open **Settings → Members** and click **Invite**. Invited people get an email and join with the **Editor** role by default. See [Roles and permissions](/articles/getting-started/your-team/roles-and-permissions) for what each role can do.

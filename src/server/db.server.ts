@@ -139,7 +139,7 @@ const MIGRATIONS = [
   `,
   // v13: folders in the data folder are help-center sections; a subfolder is a subsection.
   `ALTER TABLE articles ADD COLUMN subcategory TEXT;`,
-  // v14: article URLs include their folders (/help/billing/refunds).
+  // v14: article URLs include their folders (/help/billing/refunds; /articles/… since).
   `ALTER TABLE articles ADD COLUMN path TEXT;`,
   // v15: the last usage fetched from ModelRiver per month, shown when it can't be reached.
   `
@@ -213,6 +213,15 @@ const MIGRATIONS = [
   // v17: when the verified visitor last sent a message, so a verification
   // lapses after a while without one (and after VERIFIED_HOURS in any case).
   `ALTER TABLE conversations ADD COLUMN verified_active_at TEXT;`,
+  // v18: settings admins change from the dashboard (whether the chat is on).
+  `
+  CREATE TABLE app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+  );
+  `,
 ]
 
 let db: DatabaseSync | undefined

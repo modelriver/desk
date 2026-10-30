@@ -6,6 +6,8 @@ import { BrandMark } from '../components/BrandMark.tsx'
 import { HeaderSearch } from '../components/HeaderSearch.tsx'
 import { buttonClass } from '../components/ui.tsx'
 import { getSiteConfig } from '../functions/help.ts'
+import { ARTICLES_PATH } from '../lib/help-path.ts'
+import { ROBOTS_INDEX } from '../lib/seo.ts'
 import appCss from '../styles.css?url'
 
 export const Route = createRootRoute({
@@ -22,21 +24,36 @@ export const Route = createRootRoute({
         { title: loaderData?.brandName ?? 'Help Center' },
         { name: 'description', content: 'Guides, answers and support.' },
       ],
-      links: [...fontLinks, { rel: 'stylesheet', href: appCss }],
+      links: [
+        ...fontLinks,
+        { rel: 'stylesheet', href: appCss },
+        // The tab icon: your logo when support.config.json has one, else the Desk bot.
+        { rel: 'icon', type: 'image/svg+xml', href: loaderData?.logo?.light ?? '/favicon.svg' },
+      ],
       // Theme variables from support.config.json; rendered after the stylesheet so they apply.
       styles: loaderData ? [{ children: loaderData.themeCss }] : [],
     }
   },
+  // Pages are indexable unless their route says otherwise (search results, the dashboard, sign-in, the widget).
+  headers: () => ({ 'X-Robots-Tag': ROBOTS_INDEX }),
   shellComponent: RootDocument,
   component: RootLayout,
   notFoundComponent: NotFound,
 })
 
 function RootDocument({ children }: { children: ReactNode }) {
+  const themeColors = useRouterState({ select: (s) => (s.matches[0]?.loaderData as { themeColors?: { light: string; dark: string } } | undefined)?.themeColors })
   return (
     <html lang="en">
       <head>
         <HeadContent />
+        {/* Here rather than in head(), which keeps only one meta per name. */}
+        {themeColors && (
+          <>
+            <meta name="theme-color" media="(prefers-color-scheme: light)" content={themeColors.light} />
+            <meta name="theme-color" media="(prefers-color-scheme: dark)" content={themeColors.dark} />
+          </>
+        )}
       </head>
       <body>
         {children}
@@ -47,7 +64,7 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function RootLayout() {
-  const { repoUrl, brandName, logo } = Route.useLoaderData()
+  const { repoUrl, brandName, logo, chatEnabled } = Route.useLoaderData()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // The dashboard, sign-in and the embeddable /widget page have their own chrome.
   const publicPage = !pathname.startsWith('/dashboard') && pathname !== '/login' && pathname !== '/widget'
@@ -61,10 +78,10 @@ function RootLayout() {
             {brandName}
           </Link>
           <nav className="ml-auto flex items-center gap-2 text-sm">
-            {/* /help has its own, larger search box; ⌘K still works there. */}
-            <HeaderSearch box={pathname !== '/help'} />
+            {/* /articles has its own, larger search box; ⌘K still works there. */}
+            <HeaderSearch box={pathname !== ARTICLES_PATH} />
             <Link
-              to="/help"
+              to="/articles"
               className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground"
               activeProps={{ className: 'text-foreground' }}
             >
@@ -85,7 +102,8 @@ function RootLayout() {
           </a>
         </div>
       </footer>
-      <ChatWidget repoUrl={repoUrl} brandName={brandName} logo={logo} />
+      {/* Paused from Settings: no chat button at all. */}
+      {chatEnabled && <ChatWidget repoUrl={repoUrl} brandName={brandName} logo={logo} />}
     </div>
   )
 }
@@ -96,7 +114,7 @@ function NotFound() {
       <p className="font-serif text-3xl">This page doesn’t exist</p>
       <p className="mt-3 text-muted-foreground">It may have moved, or the link may be wrong.</p>
       <div className="mt-6 flex justify-center gap-2">
-        <Link to="/help" className={buttonClass('outline')}>
+        <Link to="/articles" className={buttonClass('outline')}>
           Browse articles
         </Link>
       </div>

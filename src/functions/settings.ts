@@ -3,6 +3,7 @@ import { asObject } from './validate.ts'
 import { requireUser } from '../server/auth.server.ts'
 import { allowAll } from '../server/rate-limit.server.ts'
 import { collectSettings } from '../server/settings.server.ts'
+import { setChatEnabled } from '../server/chat-availability.server.ts'
 import { sendEmail } from '../server/email.server.ts'
 import { currentMonth, monthUsage, MONTH_PATTERN } from '../server/usage.server.ts'
 
@@ -45,3 +46,15 @@ export const sendTestEmail = createServerFn({ method: 'POST' }).handler(async ()
   })
   return { sentTo: me.email }
 })
+
+// Admins only: turn the chat on or off for visitors (see chat-availability.server.ts).
+export const setChatAvailability = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    const { enabled } = asObject(input)
+    if (typeof enabled !== 'boolean') throw new Error('enabled is invalid.')
+    return { enabled }
+  })
+  .handler(({ data }) => {
+    const me = requireUser('admin')
+    return setChatEnabled(data.enabled, me)
+  })

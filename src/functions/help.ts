@@ -1,11 +1,12 @@
 import { createServerFn } from '@tanstack/react-start'
+import { chatEnabled } from '../server/chat-availability.server.ts'
 import { asObject, str } from './validate.ts'
-import { listArticles } from '../server/content.server.ts'
-import { helpIndex, helpPage, voteOnArticle } from '../server/help.server.ts'
+import { helpIndex, helpPage, homePage, quickSearch, voteOnArticle } from '../server/help.server.ts'
 import { env } from '../server/env.server.ts'
+import { siteUrl } from '../server/seo.server.ts'
 import { getSiteConfig as readSiteConfig } from '../server/site-config.server.ts'
 
-export const getArticles = createServerFn({ method: 'GET' }).handler(async () => listArticles())
+export const getHome = createServerFn({ method: 'GET' }).handler(async () => homePage())
 
 // The help center's front page: every article, or search results for `q`.
 export const getHelpIndex = createServerFn({ method: 'GET' })
@@ -14,6 +15,14 @@ export const getHelpIndex = createServerFn({ method: 'GET' })
     return { q: typeof q === 'string' ? q : '' }
   })
   .handler(async ({ data }) => helpIndex(data.q))
+
+// The search window's results as someone types (see quickSearch).
+export const searchArticlesQuick = createServerFn({ method: 'GET' })
+  .validator((input: unknown) => {
+    const q = asObject(input ?? {}).q
+    return { q: typeof q === 'string' ? q : '' }
+  })
+  .handler(async ({ data }) => quickSearch(data.q))
 
 // A section's page, an article, or where an old article link points now.
 export const getHelpPage = createServerFn({ method: 'GET' })
@@ -38,8 +47,14 @@ export const getSiteConfig = createServerFn({ method: 'GET' }).handler(async () 
   return {
     repoUrl: env.publicRepoUrl,
     brandName: config.brand.name,
+    // For canonical links and structured data (see siteUrl).
+    siteUrl: siteUrl(),
+    // The browser's own bars (mobile Safari, Chrome) in the page's background colour.
+    themeColors: { light: config.theme.light.background, dark: config.theme.dark.background },
     logo,
     themeCss: css,
     fontStylesheets: config.fonts.stylesheets,
+    // Paused from Settings: the chat button and the ways into it are hidden.
+    chatEnabled: chatEnabled(),
   }
 })

@@ -180,7 +180,7 @@ export function planFolderUpload(input: {
   }
 
   // A public folder and an article beside it can't share a name: both would be
-  // /help/<folder>/<name>. Check new folders against every article, and new
+  // /articles/<folder>/<name>. Check new folders against every article, and new
   // articles against every folder, existing or new.
   if (visibility === 'public') {
     const articleAt = new Set([...existingFiles, ...plan.files.map((f) => f.path)].filter((p) => p.endsWith('.md')).map((p) => p.slice(0, -3)))

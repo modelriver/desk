@@ -8,10 +8,12 @@ import { HelpBot } from '../../components/HelpBot.tsx'
 import { Badge, Button, Card, Notice, PageHeader } from '../../components/ui.tsx'
 import { cn } from '../../lib/cn.ts'
 import { errorMessage } from '../../lib/errors.ts'
+import { articleUrl } from '../../lib/help-path.ts'
 
 // What to write or fix next: questions the help center couldn't answer, and
 // how helpful visitors found each article.
 export const Route = createFileRoute('/dashboard/insights')({
+  head: () => ({ meta: [{ title: 'Insights · Dashboard' }] }),
   loader: () => getInsights(),
   errorComponent: ({ error }) => (
     <>
@@ -121,7 +123,7 @@ function InsightsPage() {
               const share = Math.round((f.helpful / total) * 100)
               return (
                 <li key={f.slug} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-sm">
-                  <a href={`/help/${f.slug}`} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate underline-offset-4 hover:underline">
+                  <a href={articleUrl(f.slug)} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate underline-offset-4 hover:underline">
                     {f.title}
                   </a>
                   <span className="text-muted-foreground">

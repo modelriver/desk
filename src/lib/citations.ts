@@ -1,4 +1,5 @@
 import type { Source } from './prompt-core.ts'
+import { articleUrl } from './help-path.ts'
 
 const MARKER = /\[\[([a-z0-9-]{1,80})\]\]/g
 
@@ -7,7 +8,7 @@ const MARKER = /\[\[([a-z0-9-]{1,80})\]\]/g
 export function linkCitations(text: string, known: Map<string, Source>): string {
   return text.replace(MARKER, (_m, slug: string) => {
     const source = known.get(slug)
-    return source ? `[${source.title}](/help/${source.path})` : ''
+    return source ? `[${source.title}](${articleUrl(source.path)})` : ''
   })
 }
 

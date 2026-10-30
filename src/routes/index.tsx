@@ -1,34 +1,89 @@
 import { useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { getArticles } from '../functions/help.ts'
-import { ArrowUpIcon } from '../components/icons.tsx'
-import { Button } from '../components/ui.tsx'
+import { createFileRoute, getRouteApi, Link } from '@tanstack/react-router'
+import { getHome } from '../functions/help.ts'
+import { ArrowUpIcon, ChevronRightIcon } from '../components/icons.tsx'
+import { CollectionIcon } from '../components/CollectionIcon.tsx'
+import { Button, buttonClass } from '../components/ui.tsx'
+import { cn } from '../lib/cn.ts'
 import { ArticleList } from '../components/ArticleList.tsx'
 import { openChat } from '../lib/chat-bus.ts'
+import { pageHead, siteFrom, websiteData } from '../lib/seo.ts'
 
 export const Route = createFileRoute('/')({
-  loader: () => getArticles(),
+  loader: () => getHome(),
+  head: ({ matches }) => {
+    const site = siteFrom(matches)
+    return pageHead({
+      ...site,
+      path: '/',
+      title: site.brandName,
+      description: `Guides and answers from ${site.brandName}. Search the help articles by topic, or ask the assistant and reach our team when you need a person.`,
+      keywords: [site.brandName, 'help center', 'support', 'guides', 'FAQ'],
+      structured: site.siteUrl ? [websiteData(site.siteUrl, site.brandName)] : [],
+    })
+  },
   component: Home,
 })
 
+const root = getRouteApi('__root__')
+
 function Home() {
-  const articles = Route.useLoaderData()
+  const { articles, sections } = Route.useLoaderData()
+  // Chat paused from Settings: the hero points to the articles instead.
+  const { chatEnabled } = root.useLoaderData()
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6">
       <section className="pt-16 pb-12 sm:pt-24">
         <h1 className="font-serif text-4xl leading-[1.1] tracking-tight sm:text-5xl">How can we help?</h1>
-        <p className="mt-4 max-w-xl text-muted-foreground">
-          Ask in your own words. The answer comes from our guides and links to the articles it used. If you need a person, our
-          team can join the chat.
-        </p>
-        <AskBox />
+        {chatEnabled ? (
+          <>
+            <p className="mt-4 max-w-xl text-muted-foreground">
+              Ask in your own words. The answer comes from our guides and links to the articles it used. If you need a person, our
+              team can join the chat.
+            </p>
+            <AskBox />
+          </>
+        ) : (
+          <>
+            <p className="mt-4 max-w-xl text-muted-foreground">Find answers in our guides below, or search all of them.</p>
+            <Link to="/articles" className={cn(buttonClass('default'), 'mt-6')}>
+              Browse all articles
+            </Link>
+          </>
+        )}
       </section>
+
+      {sections.length > 0 && (
+        <section className="pb-12" aria-labelledby="topics">
+          <h2 id="topics" className="mb-3 text-sm font-medium text-muted-foreground">
+            Browse by topic
+          </h2>
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {sections.map((s) => (
+              <li key={s.path} className="min-w-0">
+                <Link
+                  to="/articles/$"
+                  params={{ _splat: s.path }}
+                  className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 hover:border-foreground/25 hover:bg-muted/40"
+                >
+                  <CollectionIcon icon={s.icon} size={18} className="shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate font-medium">{s.title}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {s.count} {s.count === 1 ? 'article' : 'articles'}
+                  </span>
+                  <ChevronRightIcon size={16} className="shrink-0 text-muted-foreground" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="pb-24">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="text-sm font-medium text-muted-foreground">Guides</h2>
           {articles.length > 8 && (
-            <Link to="/help" className="text-sm text-primary hover:underline">
+            <Link to="/articles" className="text-sm text-primary hover:underline">
               All {articles.length} articles
             </Link>
           )}
@@ -49,7 +104,7 @@ function AskBox() {
   }
   return (
     <form
-      className="mt-8 rounded-2xl border border-input bg-card p-2 shadow-sm focus-within:border-ring"
+      className="mt-8 rounded-2xl border border-input bg-card p-2 focus-within:border-ring"
       onSubmit={(e) => {
         e.preventDefault()
         submit()

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { parseSiteConfig, SiteConfigError, themeCss, type Logo, type SiteConfig } from '../lib/site-config.ts'
+import { faviconSvg } from '../lib/favicon.ts'
 
 // support.config.json in the working directory, or the file named by
 // SUPPORT_CONFIG. Missing file = defaults. Read once per process: restart to
@@ -61,4 +62,13 @@ export function getSiteConfig() {
 // For server.mjs: fail at startup, not on the first page view, if a logo is missing or invalid.
 export function checkSiteConfig() {
   getSiteConfig()
+}
+
+// GET /favicon.svg: the Desk bot in this theme's colours, cached for a day
+// (the config itself is read once, at start).
+export function faviconResponse(): Response {
+  const { light, dark } = getSiteConfig().config.theme
+  return new Response(faviconSvg({ ink: light.foreground, paper: light.card }, { ink: dark.foreground, paper: dark.card }), {
+    headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' },
+  })
 }

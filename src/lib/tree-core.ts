@@ -6,12 +6,17 @@
 // order of what's inside it:  { "title": "Billing", "order": ["plans.md", "invoices"] }
 // Anything not listed comes after the listed items, folders first, then by name.
 
+import { isCollectionIcon, MAX_FOLDER_DESCRIPTION, type CollectionIconName } from './collection-icons.ts'
+
 export const META_FILE = '.desk.json'
 export const MAX_DEPTH = 2
 
 export interface FolderMeta {
   title?: string
   order?: string[]
+  // A public folder's card on the help center: a line about what's in it, and an icon.
+  description?: string
+  icon?: CollectionIconName
 }
 
 const FOLDER = /^[a-z0-9][a-z0-9-]{0,59}$/
@@ -91,10 +96,13 @@ export function parseMeta(json: string | null): FolderMeta {
   try {
     const data = JSON.parse(json) as unknown
     if (!data || typeof data !== 'object') return {}
-    const { title, order } = data as Record<string, unknown>
+    const { title, order, description, icon } = data as Record<string, unknown>
+    // Every field is kept on a round trip: order changes rewrite this file.
     return {
       title: typeof title === 'string' && title.trim() ? title.trim().slice(0, 60) : undefined,
       order: Array.isArray(order) ? order.filter((n): n is string => typeof n === 'string').slice(0, 1000) : undefined,
+      description: typeof description === 'string' && description.trim() ? description.trim().slice(0, MAX_FOLDER_DESCRIPTION) : undefined,
+      icon: isCollectionIcon(icon) ? icon : undefined,
     }
   } catch {
     return {}

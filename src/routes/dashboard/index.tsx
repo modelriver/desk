@@ -10,6 +10,7 @@ import { ConfirmPopover } from '../../components/ConfirmPopover.tsx'
 import { errorMessage } from '../../lib/errors.ts'
 
 export const Route = createFileRoute('/dashboard/')({
+  head: () => ({ meta: [{ title: 'Conversations · Dashboard' }] }),
   loader: () => listConversations({ data: { view: 'open' } }),
   errorComponent: ({ error }) => (
     <>

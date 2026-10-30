@@ -3,7 +3,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
 import { getIntegrations, saveIntegration, testIntegration, type IntegrationsData } from '../../functions/integrations.ts'
 import { LoadError } from '../../components/LoadError.tsx'
-import { ExternalIcon } from '../../components/icons.tsx'
+import { CircleCheckIcon, CircleIcon, ExternalIcon, KeyIcon, TriangleAlertIcon } from '../../components/icons.tsx'
 import { Badge, Button, Card, Checkbox, Input, Notice, PageHeader, Section, Switch } from '../../components/ui.tsx'
 import { RelativeTime } from '../../components/RelativeTime.tsx'
 import { cn } from '../../lib/cn.ts'
@@ -11,6 +11,7 @@ import { BusyIcon } from '../../components/BusyIcon.tsx'
 import { errorMessage } from '../../lib/errors.ts'
 
 export const Route = createFileRoute('/dashboard/integrations')({
+  head: () => ({ meta: [{ title: 'Integrations · Dashboard' }] }),
   beforeLoad: ({ context }) => {
     if (context.user.role !== 'admin') throw redirect({ to: '/dashboard' })
   },
@@ -39,43 +40,63 @@ function Integrations() {
         description="Let the assistant look up a visitor’s own orders, billing or bookings, read-only, once they’ve proved their email. Keys are encrypted on this server and never shown again. Only admins see this page."
       />
       <div className="space-y-8">
-        <Section
-          title="Who can be looked up"
-          description={`A visitor proves their email before any lookup. Without one of these, connectors stay unused. A verification lasts ${
-            data.verification.hours > 0 ? `${data.verification.hours} hours` : 'until the conversation ends'
-          }, or ${data.verification.idleHours} hours without a message, whichever comes first (VERIFIED_HOURS).`}
-        >
-          <Status
-            ok={data.identity.emailCode}
-            label="Email codes"
-            detail={
-              data.identity.emailCode
-                ? 'Visitors can verify in the chat with a 6-digit code sent to their email.'
-                : 'Needs email set up (EMAIL_PROVIDER and EMAIL_FROM; see Settings).'
-            }
-          />
-          <Status
-            ok={data.identity.token}
-            label="Signed-in visitors"
-            detail={
-              data.identity.token
-                ? 'Your site can pass a signed identity token to the widget, so signed-in visitors skip the code.'
-                : 'Optional. Set DESK_IDENTITY_SECRET and sign tokens on your site (see the README).'
-            }
-          />
-          {!data.secretKeySet && (
+        {/* How a visitor proves who they are: a lookup needs one of these. */}
+        <section aria-labelledby="verification-title">
+          <Card className="overflow-hidden">
+            <div className="flex items-start gap-3 border-b border-border px-5 py-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h2 id="verification-title" className="font-semibold">
+                    Visitor verification
+                  </h2>
+                  <Badge variant={canVerify ? 'success' : 'muted'}>{canVerify ? 'Ready' : 'Not set up'}</Badge>
+                </div>
+                <p className="mt-0.5 text-[13px] text-muted-foreground">
+                  A visitor proves their email before any lookup. It lasts{' '}
+                  {data.verification.hours > 0 ? `${data.verification.hours} hours` : 'until the conversation ends'}, or {data.verification.idleHours} hours without a message
+                  (VERIFIED_HOURS).
+                </p>
+              </div>
+            </div>
             <Status
-              ok={false}
-              label="Saving keys here"
-              detail="Set DESK_SECRET_KEY on the server (openssl rand -base64 32) and restart to save keys on this page. Until then, keys can only come from the environment."
+              ok={data.identity.emailCode}
+              label="Email codes"
+              detail={
+                data.identity.emailCode
+                  ? 'Visitors verify in the chat with a 6-digit code sent to their email.'
+                  : 'Needs email set up (EMAIL_PROVIDER and EMAIL_FROM; see Settings).'
+              }
             />
-          )}
-          {!canVerify && (
-            <p className="border-t border-border bg-muted/50 px-5 py-3 text-sm text-muted-foreground">
-              Neither is set up yet, so connectors won’t be used in chats.
-            </p>
-          )}
-        </Section>
+            <Status
+              ok={data.identity.token}
+              label="Signed-in visitors"
+              detail={
+                data.identity.token
+                  ? 'Your site passes a signed identity token to the widget, so signed-in visitors skip the code.'
+                  : 'Optional. Set DESK_IDENTITY_SECRET and sign tokens on your site (see the README).'
+              }
+            />
+            {!canVerify && (
+              <p className="flex items-center gap-2 bg-muted/40 px-5 py-2.5 text-[13px]">
+                <TriangleAlertIcon size={15} className="shrink-0 text-muted-foreground" />
+                Connectors won’t be used in chats until one of these is on.
+              </p>
+            )}
+          </Card>
+        </section>
+
+        {/* Keys typed below are encrypted with DESK_SECRET_KEY; without it they can only come from the environment. */}
+        {!data.secretKeySet && (
+          <p className="flex items-start gap-2.5 rounded-xl border border-border bg-card px-5 py-3 text-[13px]">
+            <KeyIcon size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
+            <span>
+              <span className="font-medium">Keys can’t be saved on this page yet.</span>{' '}
+              <span className="text-muted-foreground">
+                Set DESK_SECRET_KEY on the server (openssl rand -base64 32) and restart. Until then, keys can only come from the environment.
+              </span>
+            </span>
+          </p>
+        )}
 
         {data.connectors.map((c) => (
           <ConnectorCard key={c.id} connector={c} secretKeySet={data.secretKeySet} onSaved={setData} />
@@ -221,9 +242,9 @@ function ConnectorCard({
               </h2>
               <Badge variant={state.variant}>{state.label}</Badge>
             </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">{c.description}</p>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">{c.description}</p>
             {c.problems.map((p) => (
-              <p key={p} className="mt-1 text-sm text-destructive">
+              <p key={p} className="mt-1 text-[13px] text-destructive">
                 {p}
               </p>
             ))}
@@ -238,49 +259,50 @@ function ConnectorCard({
         </div>
 
         <form
-          className="grid gap-4 px-5 py-4"
           onSubmit={(e) => {
             e.preventDefault()
             void submit(c.enabled)
           }}
         >
-          {c.fields.map((f) => (
-            <FieldRow
-              key={f.name}
-              field={f}
-              value={values[f.name] ?? ''}
-              secretKeySet={secretKeySet}
-              busy={busy !== null}
-              onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v }))}
-              // Without a required field it can't stay on.
-              onClear={() => void submit(f.required ? false : c.enabled, [f.name])}
-            />
-          ))}
-          {c.options.length > 0 && (
-            <fieldset className="grid gap-2">
-              <legend className="mb-1 text-sm font-medium">Share with the assistant</legend>
-              {c.options.map((o) => (
-                <label key={o.name} className="flex cursor-pointer items-start gap-2.5 text-sm">
-                  <Checkbox
-                    className="mt-0.5"
-                    checked={options[o.name] ?? o.value}
-                    onChange={(e) => setOptions((prev) => ({ ...prev, [o.name]: e.target.checked }))}
-                  />
-                  <span>
-                    {o.label}
-                    {o.hint && <span className="block text-xs text-muted-foreground">{o.hint}</span>}
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-          )}
-          {result && <Notice tone={result.ok ? 'success' : 'error'}>{result.text}</Notice>}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" size="sm" disabled={busy !== null || !dirty}>
+          <div className="grid gap-4 px-5 py-4">
+            {c.fields.map((f) => (
+              <FieldRow
+                key={f.name}
+                field={f}
+                value={values[f.name] ?? ''}
+                secretKeySet={secretKeySet}
+                busy={busy !== null}
+                onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v }))}
+                // Without a required field it can't stay on.
+                onClear={() => void submit(f.required ? false : c.enabled, [f.name])}
+              />
+            ))}
+            {c.options.length > 0 && (
+              <fieldset className="grid gap-2">
+                <legend className="mb-1 text-[13px] font-medium">Share with the assistant</legend>
+                {c.options.map((o) => (
+                  <label key={o.name} className="flex cursor-pointer items-start gap-2.5 text-[13px]">
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={options[o.name] ?? o.value}
+                      onChange={(e) => setOptions((prev) => ({ ...prev, [o.name]: e.target.checked }))}
+                    />
+                    <span>
+                      {o.label}
+                      {o.hint && <span className="block text-xs text-muted-foreground">{o.hint}</span>}
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            {result && <Notice tone={result.ok ? 'success' : 'error'}>{result.text}</Notice>}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-border bg-muted/40 px-5 py-3">
+            <Button type="submit" disabled={busy !== null || !dirty}>
               <BusyIcon busy={busy === 'save'} size={14} />
               Save
             </Button>
-            <Button variant="outline" size="sm" disabled={busy !== null || !c.ready || dirty} onClick={() => void runTest()}>
+            <Button variant="outline" disabled={busy !== null || !c.ready || dirty} onClick={() => void runTest()}>
               <BusyIcon busy={busy === 'test'} size={14} />
               Test connection
             </Button>
@@ -288,7 +310,7 @@ function ConnectorCard({
               href={c.setupUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              className="ml-auto inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
             >
               Where to get the key <ExternalIcon size={13} />
             </a>
@@ -331,7 +353,7 @@ function FieldRow({
       : f.placeholder
   return (
     <div className="grid gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium">
+      <label htmlFor={id} className="text-[13px] font-medium">
         {f.label}
         {!f.required && <span className="font-normal text-muted-foreground"> (optional)</span>}
       </label>
@@ -349,7 +371,7 @@ function FieldRow({
           aria-describedby={`${id}-hint`}
         />
         {(saved || (!f.secret && f.value && !fromEnv)) && (
-          <Button variant="ghost-destructive" size="sm" disabled={busy} onClick={onClear}>
+          <Button variant="ghost-destructive" disabled={busy} onClick={onClear}>
             Remove
           </Button>
         )}
@@ -369,11 +391,16 @@ function FieldRow({
 function Status({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
   return (
     <div className="flex items-start gap-3 border-b border-border px-5 py-3 last:border-b-0">
-      <span className={cn('mt-1.5 size-2.5 shrink-0 rounded-full', ok ? 'bg-success' : 'bg-muted-foreground/50')} aria-hidden="true" />
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{detail}</p>
+      {ok ? (
+        <CircleCheckIcon size={16} className="mt-px shrink-0 text-success" aria-hidden="true" />
+      ) : (
+        <CircleIcon size={16} className="mt-px shrink-0 text-muted-foreground/60" aria-hidden="true" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] leading-5 font-medium">{label}</p>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">{detail}</p>
       </div>
+      <Badge variant={ok ? 'success' : 'muted'}>{ok ? 'On' : 'Off'}</Badge>
     </div>
   )
 }

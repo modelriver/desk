@@ -53,7 +53,7 @@ export function AddMemberDialog({ open, onClose, onAdded }: { open: boolean; onC
       // Clicking the backdrop closes it, except while the password is showing, so it isn't lost by accident.
       onClick={(e) => e.target === e.currentTarget && !added && close()}
       aria-labelledby="add-member-title"
-      className="m-auto w-[min(28rem,calc(100vw-2rem))] max-w-none rounded-2xl border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/40"
+      className="m-auto w-[min(28rem,calc(100vw-2rem))] max-w-none rounded-2xl border border-border bg-card p-0 text-foreground backdrop:bg-black/40"
     >
       {open && (
         <div className="p-6">

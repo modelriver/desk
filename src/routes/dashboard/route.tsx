@@ -4,7 +4,7 @@ import { useServerFn } from '@tanstack/react-start'
 import { getMe, signOut } from '../../functions/users.ts'
 import { waitingCount } from '../../functions/dashboard.ts'
 import { BrandMark } from '../../components/BrandMark.tsx'
-import { ArchiveIcon, ChartIcon, ChevronsUpDownIcon, SettingsIcon, UserIcon, ExternalIcon, FolderIcon, InboxIcon, LinkIcon, LogOutIcon, UsersIcon } from '../../components/icons.tsx'
+import { ArchiveIcon, BookIcon, ChartIcon, ChevronsUpDownIcon, SettingsIcon, UserIcon, ExternalIcon, InboxIcon, LinkIcon, LogOutIcon, UsersIcon } from '../../components/icons.tsx'
 import { Badge } from '../../components/ui.tsx'
 import { cn } from '../../lib/cn.ts'
 import { initials as initialsOf } from '../../lib/initials.ts'
@@ -17,7 +17,8 @@ export const Route = createFileRoute('/dashboard')({
     if (!user) throw redirect({ to: '/login' })
     return { user }
   },
-  head: () => ({ meta: [{ title: 'Dashboard' }, { name: 'robots', content: 'noindex' }] }),
+  head: () => ({ meta: [{ title: 'Dashboard' }, { name: 'robots', content: 'noindex, nofollow' }] }),
+  headers: () => ({ 'X-Robots-Tag': 'noindex, nofollow' }),
   component: DashboardLayout,
 })
 
@@ -112,8 +113,8 @@ function DashboardLayout() {
             Insights
           </NavItem>
           {user.role === 'admin' && (
-            <NavItem to="/dashboard/data" icon={<FolderIcon />}>
-              Data
+            <NavItem to="/dashboard/data" icon={<BookIcon />}>
+              Knowledge
             </NavItem>
           )}
           {user.role === 'admin' && (
@@ -132,7 +133,7 @@ function DashboardLayout() {
             </NavItem>
           )}
           <a
-            href="/help"
+            href="/articles"
             className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
           >
             <ExternalIcon />
@@ -210,7 +211,7 @@ function AccountMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         className={cn(
-          'flex w-full items-center gap-2.5 rounded-lg p-2 text-left hover:bg-foreground/5',
+          'flex w-full items-center gap-2.5 rounded-lg p-2 text-left outline-none hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring/50',
           open && 'bg-foreground/8',
         )}
       >
@@ -226,7 +227,7 @@ function AccountMenu({
         <div
           role="menu"
           aria-label="Account"
-          className="absolute inset-x-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-border bg-card p-1 shadow-lg shadow-black/10 md:top-auto md:bottom-full md:mt-0 md:mb-2"
+          className="absolute inset-x-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-border bg-card p-1 md:top-auto md:bottom-full md:mt-0 md:mb-2"
         >
           <div className="flex items-center gap-2.5 px-2 py-2">
             {avatar('size-9 text-sm')}
@@ -247,15 +248,15 @@ function AccountMenu({
             role="menuitem"
             to="/dashboard/account"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-muted"
+            className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] text-foreground hover:bg-muted"
           >
             <UserIcon size={15} className="text-muted-foreground" />
             Account settings
           </Link>
           <a
             role="menuitem"
-            href="/help"
-            className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-muted"
+            href="/articles"
+            className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] text-foreground hover:bg-muted"
           >
             <ExternalIcon size={15} className="text-muted-foreground" />
             Open help center
@@ -272,7 +273,7 @@ function AccountMenu({
                 setSigningOut(false)
               }
             }}
-            className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] text-foreground hover:bg-muted disabled:opacity-50"
           >
             <LogOutIcon size={15} className="text-muted-foreground" />
             {signingOut ? 'Signing out…' : 'Sign out'}

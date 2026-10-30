@@ -10,6 +10,7 @@ import { errorMessage } from '../../lib/errors.ts'
 import { initials } from '../../lib/initials.ts'
 
 export const Route = createFileRoute('/dashboard/users')({
+  head: () => ({ meta: [{ title: 'Users · Dashboard' }] }),
   beforeLoad: ({ context }) => {
     if (context.user.role !== 'admin') throw redirect({ to: '/dashboard' })
   },

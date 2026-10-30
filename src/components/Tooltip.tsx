@@ -136,7 +136,7 @@ function Bubble({ id, anchor, side, content, shortcut }: { id: string; anchor: H
       id={id}
       role="tooltip"
       aria-hidden="true"
-      className="pointer-events-none fixed top-0 left-0 z-[100] flex max-w-64 items-center gap-2 rounded-md bg-foreground px-2.5 py-1.5 text-xs leading-snug font-medium text-background shadow-md"
+      className="pointer-events-none fixed top-0 left-0 z-[100] flex max-w-64 items-center gap-2 rounded-md bg-foreground px-2.5 py-1.5 text-xs leading-snug font-medium text-background"
       style={{ transform: place ? `translate(${place.x}px, ${place.y}px)` : undefined, visibility: place ? 'visible' : 'hidden' }}
     >
       <span>{content}</span>

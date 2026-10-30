@@ -5,7 +5,9 @@ import { reloadContent } from '../server/content.server.ts'
 import * as tree from '../server/tree.server.ts'
 import { parseFrontMatter } from '../lib/front-matter.ts'
 import { helpPath, slugFromFilename, type Visibility } from '../lib/content-core.ts'
-import { BATCH_FILES, MAX_PICKED, planFolderUpload } from '../lib/folder-upload.ts'
+import { BATCH_FILES, MAX_PICKED, MAX_UPLOAD_FILES, planFolderUpload } from '../lib/folder-upload.ts'
+import { isDraft } from '../lib/article-file.ts'
+import { MAX_FOLDER_DESCRIPTION } from '../lib/collection-icons.ts'
 
 // The Data page and the article editor (admins only): the data folder as a
 // tree of folders and files. Every change rebuilds the help center and the
@@ -53,6 +55,21 @@ export const renameDataFolder = createServerFn({ method: 'POST' })
     return changed({ path: tree.renameFolder(data.visibility, data.path, data.title) })
   })
 
+// A public folder's card on the help center: its description and icon.
+export const setDataFolderDetails = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    const o = asObject(input)
+    const description = o.description ?? ''
+    if (typeof description !== 'string' || description.length > MAX_FOLDER_DESCRIPTION + 50) throw new Error('description is invalid.')
+    if (o.icon !== null && typeof o.icon !== 'string') throw new Error('icon is invalid.')
+    return { path: relPath(o, 'path'), description, icon: o.icon as string | null }
+  })
+  .handler(({ data }) => {
+    requireUser('admin')
+    tree.setFolderDetails(data.path, { description: data.description, icon: data.icon })
+    return changed({ path: data.path })
+  })
+
 export const deleteDataItem = createServerFn({ method: 'POST' })
   .validator((input: unknown) => {
     const o = asObject(input)
@@ -94,8 +111,10 @@ export const uploadFile = createServerFn({ method: 'POST' })
   })
   .handler(async ({ data }) => {
     requireUser('admin')
-    const text = await data.file.text()
-    return changed({ path: tree.writeUpload(data.visibility, data.folder, data.file.name, text), visibility: data.visibility })
+    const path = tree.writeUpload(data.visibility, data.folder, data.file.name, await data.file.text())
+    // New Markdown uploads are drafts; say so, so the page can offer to publish them.
+    const draft = isDraft(tree.readFile(data.visibility, path).text, path)
+    return changed({ path, visibility: data.visibility, draft })
   })
 
 // --- Folder uploads (see lib/folder-upload.ts) ---
@@ -128,8 +147,9 @@ export const checkFolderUpload = createServerFn({ method: 'POST' })
   })
 
 // One batch of a checked folder upload: `path` and `file` entries in pairs,
-// plus the new folders' titles. Rebuilds the help center and the AI's index
-// once per batch, so what's live always matches what's on disk.
+// plus the new folders' titles. New Markdown files are saved as drafts.
+// Rebuilds the help center and the AI's index once per batch, so what's live
+// always matches what's on disk.
 export const uploadFolderBatch = createServerFn({ method: 'POST' })
   .validator((input: unknown) => {
     if (!(input instanceof FormData)) throw new Error('Expected a file upload.')
@@ -213,6 +233,23 @@ export const setArticleStatus = createServerFn({ method: 'POST' })
   .handler(({ data }) => {
     requireUser('admin')
     return changed(tree.setArticleStatus(data.visibility, data.path, data.status))
+  })
+
+// Publish or Unpublish everything selected on the Data page, in one go: all
+// the files are checked before any changes, and the index is rebuilt once.
+export const setArticlesStatus = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    const o = asObject(input)
+    if (!Array.isArray(o.items) || !o.items.length || o.items.length > MAX_UPLOAD_FILES) throw new Error('items is invalid.')
+    const items = o.items.map((i: unknown) => {
+      const item = asObject(i)
+      return { visibility: oneOf(item, 'visibility', VISIBILITIES), path: relPath(item, 'path') }
+    })
+    return { items, status: oneOf(o, 'status', STATUSES) }
+  })
+  .handler(({ data }) => {
+    requireUser('admin')
+    return changed({ changed: tree.setArticleStatuses(data.items, data.status) })
   })
 
 // Saves an article as a draft or published (Publish, Save draft, Unpublish).

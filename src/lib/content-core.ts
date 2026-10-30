@@ -7,9 +7,9 @@ export type Visibility = 'public' | 'private'
 
 export interface Doc {
   // The file's name: the article's id (unique across the public tree), used
-  // in citations and votes. Old /help/<slug> links redirect by it.
+  // in citations and votes. Old /articles/<slug> links redirect by it.
   slug: string
-  // Where it lives on the help center, after /help/: its folders, then its
+  // Where it lives on the help center, after /articles/: its folders, then its
   // slug ("billing/invoices/refunds").
   path: string
   visibility: Visibility
@@ -88,7 +88,7 @@ export function sortArticles<T extends ArticleSummary>(articles: T[]): T[] {
 
 export interface Section<T> {
   category: string
-  // The section's folder (its page is /help/<path>), when it has one.
+  // The section's folder (its page is /articles/<path>), when it has one.
   path: string | null
   // Articles directly in the section, then its subsections in order.
   articles: T[]
@@ -116,6 +116,33 @@ export function groupByCategory<T extends ArticleSummary>(articles: T[]): Array<
         subsections: [...subs.entries()].map(([name, list]) => ({ name, path: folderOf(list[0]!.path, 2), articles: list })),
       }
     })
+}
+
+// A public folder's own details, from its `.desk.json`.
+export interface FolderDetails {
+  description: string
+  icon: string | null
+}
+
+export interface Collection<T> extends Section<T> {
+  description: string
+  icon: string | null
+  // Published articles in it, its subsections' included.
+  count: number
+  subsections: Array<Section<T>['subsections'][number] & { description: string }>
+}
+
+// Sections with their folders' descriptions and icons, for the help center's
+// cards and section pages. A section without a folder (top-level articles) has neither.
+export function withFolderDetails<T>(sections: Array<Section<T>>, folders: ReadonlyMap<string, FolderDetails>): Array<Collection<T>> {
+  const detailsOf = (path: string | null) => (path ? folders.get(path) : undefined)
+  return sections.map((s) => ({
+    ...s,
+    description: detailsOf(s.path)?.description ?? '',
+    icon: detailsOf(s.path)?.icon ?? null,
+    count: s.articles.length + s.subsections.reduce((n, sub) => n + sub.articles.length, 0),
+    subsections: s.subsections.map((sub) => ({ ...sub, description: detailsOf(sub.path)?.description ?? '' })),
+  }))
 }
 
 const MAX_CHUNK_CHARS = 1200
@@ -232,12 +259,17 @@ export interface SearchHit {
   // The best-matching section, and a short plain-text extract around the first match.
   heading: string | null
   snippet: string
+  // When the article was last updated (added by the server, which knows it).
+  modifiedAt?: string
 }
 
 // Markdown to plain text, enough for a one-line extract.
 export function plainText(markdown: string): string {
   return markdown
     .replace(/```[\s\S]*?```/g, ' ')
+    // Dividers (---, ***) and table rules (| --- | :-: |) have no words.
+    .replace(/^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, ' ')
+    .replace(/^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$/gm, ' ')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[`*_>#|~]/g, '')

@@ -18,7 +18,7 @@ test('external links open in a new tab without referrer; internal links stay pla
   const ext = renderMarkdown('[docs](https://example.com)')
   assert.match(ext, /target="_blank"/)
   assert.match(ext, /rel="noopener noreferrer nofollow"/)
-  assert.doesNotMatch(renderMarkdown('[Billing](/help/billing)'), /target=/)
+  assert.doesNotMatch(renderMarkdown('[Billing](/articles/billing)'), /target=/)
 })
 
 test('chat text never renders images, only their alt text; articles still can', () => {

@@ -132,7 +132,10 @@ const server = http.createServer({ connectionsCheckingInterval: 5_000 }, async (
     Object.defineProperty(request, 'ip', { value: req.socket.remoteAddress })
 
     const response = await handler.fetch(request)
-    const headers = { ...Object.fromEntries(response.headers), ...securityHeaders(url.pathname) }
+    // Response headers come lowercased; match them so ours replace the app's
+    // instead of being sent twice.
+    const ours = Object.entries(securityHeaders(url.pathname)).map(([k, v]) => [k.toLowerCase(), v])
+    const headers = { ...Object.fromEntries(response.headers), ...Object.fromEntries(ours) }
     const cookies = response.headers.getSetCookie()
     if (cookies.length) headers['set-cookie'] = cookies
     res.writeHead(response.status, response.statusText, headers)

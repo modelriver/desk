@@ -11,10 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardRouteRouteImport } from './routes/dashboard/route'
+import { Route as FaviconDotsvgRouteImport } from './routes/favicon[.]svg'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as WidgetRouteImport } from './routes/widget'
+import { Route as ArticlesIndexRouteImport } from './routes/articles/index'
+import { Route as ArticlesSplatRouteImport } from './routes/articles/$'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as DashboardAccountRouteImport } from './routes/dashboard/account'
 import { Route as DashboardArchivedRouteImport } from './routes/dashboard/archived'
@@ -26,6 +29,7 @@ import { Route as DashboardSettingsRouteImport } from './routes/dashboard/settin
 import { Route as DashboardUsersRouteImport } from './routes/dashboard/users'
 import { Route as HelpIndexRouteImport } from './routes/help/index'
 import { Route as HelpSplatRouteImport } from './routes/help/$'
+import { Route as MediaSplatRouteImport } from './routes/media/$'
 import { Route as DashboardCSessionIdRouteImport } from './routes/dashboard/c.$sessionId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -36,6 +40,11 @@ const IndexRoute = IndexRouteImport.update({
 const DashboardRouteRoute = DashboardRouteRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaviconDotsvgRoute = FaviconDotsvgRouteImport.update({
+  id: '/favicon.svg',
+  path: '/favicon.svg',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -56,6 +65,16 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const WidgetRoute = WidgetRouteImport.update({
   id: '/widget',
   path: '/widget',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArticlesIndexRoute = ArticlesIndexRouteImport.update({
+  id: '/articles/',
+  path: '/articles/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArticlesSplatRoute = ArticlesSplatRouteImport.update({
+  id: '/articles/$',
+  path: '/articles/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardIndexRoute = DashboardIndexRouteImport.update({
@@ -113,6 +132,11 @@ const HelpSplatRoute = HelpSplatRouteImport.update({
   path: '/help/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MediaSplatRoute = MediaSplatRouteImport.update({
+  id: '/media/$',
+  path: '/media/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardCSessionIdRoute = DashboardCSessionIdRouteImport.update({
   id: '/c/$sessionId',
   path: '/c/$sessionId',
@@ -122,10 +146,12 @@ const DashboardCSessionIdRoute = DashboardCSessionIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteRouteWithChildren
+  '/favicon.svg': typeof FaviconDotsvgRoute
   '/login': typeof LoginRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/widget': typeof WidgetRoute
+  '/articles/$': typeof ArticlesSplatRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/archived': typeof DashboardArchivedRoute
   '/dashboard/data': typeof DashboardDataRoute
@@ -135,16 +161,20 @@ export interface FileRoutesByFullPath {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/help/$': typeof HelpSplatRoute
+  '/media/$': typeof MediaSplatRoute
+  '/articles/': typeof ArticlesIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/help/': typeof HelpIndexRoute
   '/dashboard/c/$sessionId': typeof DashboardCSessionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/favicon.svg': typeof FaviconDotsvgRoute
   '/login': typeof LoginRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/widget': typeof WidgetRoute
+  '/articles/$': typeof ArticlesSplatRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/archived': typeof DashboardArchivedRoute
   '/dashboard/data': typeof DashboardDataRoute
@@ -154,6 +184,8 @@ export interface FileRoutesByTo {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/help/$': typeof HelpSplatRoute
+  '/media/$': typeof MediaSplatRoute
+  '/articles': typeof ArticlesIndexRoute
   '/dashboard': typeof DashboardIndexRoute
   '/help': typeof HelpIndexRoute
   '/dashboard/c/$sessionId': typeof DashboardCSessionIdRoute
@@ -162,10 +194,12 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteRouteWithChildren
+  '/favicon.svg': typeof FaviconDotsvgRoute
   '/login': typeof LoginRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/widget': typeof WidgetRoute
+  '/articles/$': typeof ArticlesSplatRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/archived': typeof DashboardArchivedRoute
   '/dashboard/data': typeof DashboardDataRoute
@@ -175,6 +209,8 @@ export interface FileRoutesById {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/help/$': typeof HelpSplatRoute
+  '/media/$': typeof MediaSplatRoute
+  '/articles/': typeof ArticlesIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/help/': typeof HelpIndexRoute
   '/dashboard/c/$sessionId': typeof DashboardCSessionIdRoute
@@ -184,10 +220,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dashboard'
+    | '/favicon.svg'
     | '/login'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/widget'
+    | '/articles/$'
     | '/dashboard/account'
     | '/dashboard/archived'
     | '/dashboard/data'
@@ -197,16 +235,20 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/users'
     | '/help/$'
+    | '/media/$'
+    | '/articles/'
     | '/dashboard/'
     | '/help/'
     | '/dashboard/c/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/favicon.svg'
     | '/login'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/widget'
+    | '/articles/$'
     | '/dashboard/account'
     | '/dashboard/archived'
     | '/dashboard/data'
@@ -216,6 +258,8 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/users'
     | '/help/$'
+    | '/media/$'
+    | '/articles'
     | '/dashboard'
     | '/help'
     | '/dashboard/c/$sessionId'
@@ -223,10 +267,12 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/dashboard'
+    | '/favicon.svg'
     | '/login'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/widget'
+    | '/articles/$'
     | '/dashboard/account'
     | '/dashboard/archived'
     | '/dashboard/data'
@@ -236,6 +282,8 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/users'
     | '/help/$'
+    | '/media/$'
+    | '/articles/'
     | '/dashboard/'
     | '/help/'
     | '/dashboard/c/$sessionId'
@@ -244,11 +292,15 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRouteRoute: typeof DashboardRouteRouteWithChildren
+  FaviconDotsvgRoute: typeof FaviconDotsvgRoute
   LoginRoute: typeof LoginRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   WidgetRoute: typeof WidgetRoute
+  ArticlesSplatRoute: typeof ArticlesSplatRoute
   HelpSplatRoute: typeof HelpSplatRoute
+  MediaSplatRoute: typeof MediaSplatRoute
+  ArticlesIndexRoute: typeof ArticlesIndexRoute
   HelpIndexRoute: typeof HelpIndexRoute
 }
 
@@ -266,6 +318,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/favicon.svg': {
+      id: '/favicon.svg'
+      path: '/favicon.svg'
+      fullPath: '/favicon.svg'
+      preLoaderRoute: typeof FaviconDotsvgRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -294,6 +353,20 @@ declare module '@tanstack/react-router' {
       path: '/widget'
       fullPath: '/widget'
       preLoaderRoute: typeof WidgetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/articles/': {
+      id: '/articles/'
+      path: '/articles'
+      fullPath: '/articles/'
+      preLoaderRoute: typeof ArticlesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/articles/$': {
+      id: '/articles/$'
+      path: '/articles/$'
+      fullPath: '/articles/$'
+      preLoaderRoute: typeof ArticlesSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/': {
@@ -373,6 +446,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HelpSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/media/$': {
+      id: '/media/$'
+      path: '/media/$'
+      fullPath: '/media/$'
+      preLoaderRoute: typeof MediaSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/c/$sessionId': {
       id: '/dashboard/c/$sessionId'
       path: '/c/$sessionId'
@@ -416,11 +496,15 @@ const DashboardRouteRouteWithChildren = DashboardRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRouteRoute: DashboardRouteRouteWithChildren,
+  FaviconDotsvgRoute: FaviconDotsvgRoute,
   LoginRoute: LoginRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   WidgetRoute: WidgetRoute,
+  ArticlesSplatRoute: ArticlesSplatRoute,
   HelpSplatRoute: HelpSplatRoute,
+  MediaSplatRoute: MediaSplatRoute,
+  ArticlesIndexRoute: ArticlesIndexRoute,
   HelpIndexRoute: HelpIndexRoute,
 }
 export const routeTree = rootRouteImport

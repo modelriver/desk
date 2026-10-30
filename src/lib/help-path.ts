@@ -1,5 +1,14 @@
 // Help-center URLs, shared by the server and the browser (no Node imports).
 
+// Where the help center lives. Links from before it moved here (/help/…)
+// redirect, see routes/help/.
+export const ARTICLES_PATH = '/articles'
+
+// A section's or article's address: "billing/refunds" is /articles/billing/refunds.
+export function articleUrl(path: string): string {
+  return `${ARTICLES_PATH}/${path}`
+}
+
 // An article's help-center path from its file: "billing/plans.md" with slug
 // "plans" is "billing/plans". Folder names are already URL-safe (lowercase,
 // hyphens for spaces).
@@ -14,7 +23,7 @@ export function folderOf(path: string, depth: number): string | null {
   return parts.length > depth ? parts.slice(0, depth).join('/') : null
 }
 
-// What a /help/<path> URL names, given the public articles (slug + path):
+// What an /articles/<path> URL names, given the public articles (slug + path):
 // a section or subsection (its folder has articles), an article at its
 // current address, or an article that has moved, found by its unique name
 // (the last part of the URL). Null when nothing matches.

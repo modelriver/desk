@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { getDb, now } from './db.server.ts'
-import { readTree, rootDir, walkFiles } from './tree.server.ts'
+import { readTree, rootDir, walkFiles, type FolderNode } from './tree.server.ts'
 import { isDraft } from '../lib/article-file.ts'
 import {
   buildIndex,
@@ -12,6 +12,7 @@ import {
   toDoc,
   type ArticleSummary,
   type Doc,
+  type FolderDetails,
   type SearchHit,
   type SearchIndex,
   type Visibility,
@@ -25,6 +26,21 @@ interface ContentState {
   // private note can never surface there.
   publicIndex: SearchIndex
   modified: Map<string, string>
+  // Public folders' descriptions and icons, by path, for the help center's cards.
+  folders: Map<string, FolderDetails>
+}
+
+function readFolderDetails(): Map<string, FolderDetails> {
+  const out = new Map<string, FolderDetails>()
+  const walk = (folder: FolderNode) => {
+    for (const c of folder.children) {
+      if (c.kind !== 'folder') continue
+      out.set(c.path, { description: c.description, icon: c.icon })
+      walk(c)
+    }
+  }
+  walk(readTree('public'))
+  return out
 }
 
 let state: ContentState | undefined
@@ -63,8 +79,12 @@ export function reloadContent(): ContentState {
   const index = buildIndex(chunks)
   const publicIndex = buildIndex(chunks.filter((c) => c.visibility === 'public'))
   syncArticles(docs.filter((d) => d.visibility === 'public'), modified)
-  state = { docs, index, publicIndex, modified }
+  state = { docs, index, publicIndex, modified, folders: readFolderDetails() }
   return state
+}
+
+export function folderDetails(): ReadonlyMap<string, FolderDetails> {
+  return content().folders
 }
 
 function content(): ContentState {
@@ -125,7 +145,8 @@ export function getArticle(slug: string): (ArticleMeta & { body: string; related
 // Help-center search: public articles only.
 export function searchHelp(query: string, limit = 10): SearchHit[] {
   const { docs, publicIndex } = content()
-  return searchArticles(publicIndex, docs, query, limit)
+  const updated = new Map(listArticles().map((a) => [a.slug, a.modifiedAt]))
+  return searchArticles(publicIndex, docs, query, limit).map((hit) => ({ ...hit, modifiedAt: updated.get(hit.slug) }))
 }
 
 export function searchContent(query: string, limit = 5) {

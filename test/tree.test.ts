@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { orderChildren, parsePath, placeInOrder, folderName } from '../src/lib/tree-core.ts'
-import { articleBodyForEditor, hasLeadingH1, serializeArticle } from '../src/lib/article-file.ts'
+import { articleBodyForEditor, hasLeadingH1, serializeArticle, splitLeadingH1 } from '../src/lib/article-file.ts'
 
 // The fs-backed functions read DATA_DIR when first imported, so point it at a
 // throwaway folder before loading them.
@@ -194,6 +194,9 @@ test('article files: title heading split off for editing, other headings kept', 
   assert.equal(articleBodyForEditor('# Only heading\n\ntext', 'x.md').title, 'Only heading')
   assert.equal(hasLeadingH1('\n# Title\n'), true)
   assert.equal(hasLeadingH1('Intro\n# Title'), false)
+  // The article page puts the date between the title and the rest.
+  assert.deepEqual(splitLeadingH1('# Getting started\n\nWelcome.'), { heading: 'Getting started', rest: 'Welcome.' })
+  assert.deepEqual(splitLeadingH1('Welcome.'), { heading: null, rest: 'Welcome.' })
   // Titles read back exactly as typed, including ones that need quoting.
   for (const title of ['A "quoted" title', 'Billing: plans', '#1 tip', ' padded ']) {
     const back = articleBodyForEditor(serializeArticle({ title, description: 'd: x', body: 'x' }, null), 'x.md')

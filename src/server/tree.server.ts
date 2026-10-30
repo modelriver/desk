@@ -30,6 +30,7 @@ import {
   type ArticleStatus,
 } from '../lib/article-file.ts'
 import { foldersFor } from '../lib/folder-upload.ts'
+import { isCollectionIcon, MAX_FOLDER_DESCRIPTION, type CollectionIconName } from '../lib/collection-icons.ts'
 
 // Reading and changing the data folder as a tree of folders and files. Every
 // path goes through resolve(), which validates each part and refuses symlinks,
@@ -59,6 +60,9 @@ export interface FolderNode {
   name: string
   path: string
   title: string
+  // Its card on the help center ("" and null when not set).
+  description: string
+  icon: CollectionIconName | null
   children: Array<FolderNode | FileNode>
 }
 
@@ -150,6 +154,8 @@ export function readTree(visibility: Visibility, rel = ''): FolderNode {
     name: baseName(rel),
     path: rel,
     title: rel ? (meta.title ?? titleFromName(baseName(rel))) : visibility === 'public' ? 'Public' : 'Private',
+    description: (rel && meta.description) || '',
+    icon: (rel && meta.icon) || null,
     children: ordered.map((name) => {
       const entry = byName.get(name)!
       const childRel = joinPath(rel, name)
@@ -191,7 +197,7 @@ function publicSlugTaken(slug: string, except?: string): string | null {
 }
 
 // A public folder and an article beside it can't share a name: both would be
-// /help/<folder>/<name>. True when `name` is taken in that folder, by a folder
+// /articles/<folder>/<name>. True when `name` is taken in that folder, by a folder
 // or an article, or only by one `kind` when given.
 function urlTaken(visibility: Visibility, folderRel: string, name: string, kind?: 'folder' | 'file'): boolean {
   if (visibility !== 'public') return false
@@ -239,7 +245,7 @@ export function createFolder(visibility: Visibility, parentRel: string, title: s
 }
 
 // Renames a folder: its title, and its name on disk, which is its part of
-// help-center URLs ("Plans & pricing" -> /help/plans-pricing/…). Links to the
+// help-center URLs ("Plans & pricing" -> /articles/plans-pricing/…). Links to the
 // old URLs still work: articles are found by their own name. Returns the new path.
 export function renameFolder(visibility: Visibility, rel: string, title: string): string {
   const clean = title.trim().slice(0, 60)
@@ -261,6 +267,18 @@ export function renameFolder(visibility: Visibility, rel: string, title: string)
   const meta = readMeta(parentDir)
   if (meta.order) writeMeta(parentDir, { ...meta, order: meta.order.map((n) => (n === oldName ? name : n)) })
   return joinPath(parent, name)
+}
+
+// A public folder's card on the help center: its description and icon. Its
+// name, title and order stay as they are, so its URL never changes here.
+export function setFolderDetails(rel: string, details: { description: string; icon: string | null }) {
+  if (!rel) throw new PathError('The top level has no card of its own.')
+  const description = details.description.trim()
+  if (description.length > MAX_FOLDER_DESCRIPTION) throw new PathError(`Keep the description to ${MAX_FOLDER_DESCRIPTION} characters.`)
+  if (details.icon !== null && !isCollectionIcon(details.icon)) throw new PathError('Choose one of the icons shown.')
+  const dir = resolve('public', rel, 'folder')
+  if (!fs.existsSync(dir)) throw new PathError('That folder no longer exists.')
+  writeMeta(dir, { ...readMeta(dir), description: description || undefined, icon: details.icon ?? undefined })
 }
 
 // Deletes a file, or a folder with everything in it. Returns how many files went.
@@ -321,6 +339,15 @@ export function moveItem(
 
 // --- Files ---
 
+// What an uploaded file is saved as. A new Markdown file is a draft, so
+// nothing goes live until someone publishes it; one replacing a file keeps
+// that file's status. Plain-text notes can't be drafts.
+function uploadedText(abs: string, rel: string, text: string): string {
+  if (!canBeDraft(rel)) return text
+  const status: ArticleStatus = fs.existsSync(abs) && !isDraft(fs.readFileSync(abs, 'utf8'), rel) ? 'published' : 'draft'
+  return withStatus(text, status)
+}
+
 export function writeUpload(visibility: Visibility, folderRel: string, originalName: string, text: string): string {
   if (Buffer.byteLength(text) > MAX_FILE_BYTES) throw new PathError('Files must be 1 MB or smaller.')
   if (text.includes('\u0000')) throw new PathError('That does not look like a text file.')
@@ -335,7 +362,7 @@ export function writeUpload(visibility: Visibility, folderRel: string, originalN
     assertUrlFree(visibility, folderRel, slugFromFilename(name), 'article')
   }
   const existed = fs.existsSync(abs)
-  fs.writeFileSync(abs, text)
+  fs.writeFileSync(abs, uploadedText(abs, rel, text))
   if (!existed) updateOrder(visibility, folderRel, (order) => placeInOrder(order, name, null))
   return rel
 }
@@ -343,8 +370,13 @@ export function writeUpload(visibility: Visibility, folderRel: string, originalN
 // One batch of a folder upload (see lib/folder-upload.ts): each file at the
 // path the plan gave it, creating the folders it needs with their titles and
 // merging into folders that already exist. Everything in the batch is checked
-// before anything is written. Returns how many files were written.
-export function writeUploadBatch(visibility: Visibility, files: Array<{ path: string; text: string }>, titles: Record<string, string>): number {
+// before anything is written. New Markdown files are saved as drafts (see
+// uploadedText). Returns each file written and whether it's a draft.
+export function writeUploadBatch(
+  visibility: Visibility,
+  files: Array<{ path: string; text: string }>,
+  titles: Record<string, string>,
+): Array<{ path: string; draft: boolean }> {
   const seen = new Set<string>()
   for (const file of files) {
     const name = baseName(file.path)
@@ -389,13 +421,16 @@ export function writeUploadBatch(visibility: Visibility, files: Array<{ path: st
     writeMeta(resolve(visibility, folder.path, 'folder'), { title: folder.title.trim().slice(0, 60) || titleFromName(baseName(folder.path)) })
     add(folder.path)
   }
+  const written: Array<{ path: string; draft: boolean }> = []
   for (const file of files) {
     const abs = resolve(visibility, file.path, 'file')
     if (!fs.existsSync(abs)) add(file.path)
-    fs.writeFileSync(abs, file.text)
+    const text = uploadedText(abs, file.path, file.text)
+    fs.writeFileSync(abs, text)
+    written.push({ path: file.path, draft: isDraft(text, file.path) })
   }
   for (const [parent, names] of added) updateOrder(visibility, parent, (order) => names.reduce((o, name) => placeInOrder(o, name, null), order))
-  return files.length
+  return written
 }
 
 export function readFile(visibility: Visibility, rel: string) {
@@ -512,4 +547,24 @@ export function setArticleStatus(visibility: Visibility, rel: string, status: Ar
   const abs = resolve(visibility, rel, 'file')
   if (next !== text) fs.writeFileSync(abs, next)
   return { path: rel, modifiedAt: fs.statSync(abs).mtime.toISOString() }
+}
+
+// Publish or unpublish many files at once (the Data page's selection). Every
+// file is checked first, so one that's gone or can't be a draft changes
+// nothing. Returns how many changed; ones already in that state are left alone.
+export function setArticleStatuses(items: Array<{ visibility: Visibility; path: string }>, status: ArticleStatus): number {
+  const files = items.map(({ visibility, path: rel }) => {
+    if (!canBeDraft(rel)) throw new PathError(`${baseName(rel)}: ${NOT_DRAFTABLE}`)
+    const abs = resolve(visibility, rel, 'file')
+    if (!fs.existsSync(abs)) throw new PathError(`${rel} no longer exists. Refresh the page.`)
+    return { abs, text: fs.readFileSync(abs, 'utf8') }
+  })
+  let changed = 0
+  for (const { abs, text } of files) {
+    const next = withStatus(text, status)
+    if (next === text) continue
+    fs.writeFileSync(abs, next)
+    changed++
+  }
+  return changed
 }

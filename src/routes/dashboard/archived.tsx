@@ -9,6 +9,7 @@ import { ConversationList, retentionLabel } from '../../components/ConversationL
 import { errorMessage } from '../../lib/errors.ts'
 
 export const Route = createFileRoute('/dashboard/archived')({
+  head: () => ({ meta: [{ title: 'Archived · Dashboard' }] }),
   loader: () => listConversations({ data: { view: 'archived' } }),
   errorComponent: ({ error }) => (
     <>

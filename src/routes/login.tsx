@@ -15,7 +15,8 @@ export const Route = createFileRoute('/login')({
   beforeLoad: async () => {
     if (await getMe()) throw redirect({ to: '/dashboard' })
   },
-  head: () => ({ meta: [{ title: 'Sign in' }, { name: 'robots', content: 'noindex' }] }),
+  head: () => ({ meta: [{ title: 'Sign in' }, { name: 'robots', content: 'noindex, nofollow' }] }),
+  headers: () => ({ 'X-Robots-Tag': 'noindex, nofollow' }),
   component: Login,
 })
 
@@ -81,7 +82,7 @@ function Login() {
           <p className="mt-1 text-sm text-muted-foreground">{heading.sub}</p>
         </div>
 
-        <div className="grid gap-4 rounded-xl border border-border bg-card p-6 shadow-sm">
+        <div className="grid gap-4 rounded-xl border border-border bg-card p-6">
           {step.kind === 'password' && <PasswordStep busy={busy} error={error} run={run} onNext={goTo} onSignedIn={() => void enterDashboard()} />}
           {step.kind === 'code' && (
             <CodeStep

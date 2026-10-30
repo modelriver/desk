@@ -35,6 +35,7 @@ import { sendEmail } from '../server/email.server.ts'
 import { getSiteConfig } from '../server/site-config.server.ts'
 import { errorMessage } from '../lib/errors.ts'
 import { escapeHtml } from '../lib/escape.ts'
+import { CHAT_PAUSED_MESSAGE, chatEnabled } from '../server/chat-availability.server.ts'
 
 // Public chat endpoints used by the widget. A conversation is identified by an
 // HttpOnly cookie holding its id plus a random visitor token (stored hashed).
@@ -86,6 +87,7 @@ export const startConversation = createServerFn({ method: 'POST' })
   })
   .handler(({ data }) =>
     visitorSafe(() => {
+      if (!chatEnabled()) throw new VisitorError(CHAT_PAUSED_MESSAGE)
       // Pacing after "End conversation": returns the wait instead of starting.
       const keys = { device: deviceId(true), ip: clientIp() }
       const wait = restartWaitSeconds(keys)
@@ -216,6 +218,7 @@ export const sendMessage = createServerFn({ method: 'POST' })
   .validator((input: unknown) => ({ text: str(asObject(input), 'text', { max: MAX_MESSAGE }) }))
   .handler(({ data }) =>
     visitorSafe(async () => {
+      if (!chatEnabled()) throw new VisitorError(CHAT_PAUSED_MESSAGE)
       const conv = requireConversation()
       const allowed = allowAll([
         { key: `msg:${conv.id}`, max: 20, windowMs: 10 * MINUTE },

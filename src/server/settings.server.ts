@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import { getRequest, getRequestIP } from '@tanstack/react-start/server'
+import { chatStatus } from './chat-availability.server.ts'
 import { getDb } from './db.server.ts'
 import { env } from './env.server.ts'
 import { clientIp } from './auth.server.ts'
@@ -9,6 +10,7 @@ import { LOCK_AFTER_FAILURES } from './account-security.server.ts'
 import { getSiteConfig, siteConfigPath } from './site-config.server.ts'
 import { aiActivity, appVersion, checkModelRiver, proxyWarning } from './status.server.ts'
 import { emailStatus, lastEmailResult } from './email.server.ts'
+import { mediaStatus } from './media.server.ts'
 import { currentMonth, monthUsage, setupMonth } from './usage.server.ts'
 
 const MINUTE = 60_000
@@ -36,6 +38,7 @@ export async function collectSettings({ recheck = false } = {}) {
   const [connection, usage] = await Promise.all([checkModelRiver({ force: recheck }), monthUsage(currentMonth())])
 
   return {
+    chat: chatStatus(db),
     ai: {
       connection,
       apiUrl: env.modelriverApiUrl,
@@ -51,6 +54,7 @@ export async function collectSettings({ recheck = false } = {}) {
       handoffSubscribers: subscribers.handoff ?? 0,
       conversationSubscribers: subscribers.conversations ?? 0,
     },
+    media: mediaStatus(),
     usage,
     usageSince: setupMonth(db),
     budget: {

@@ -29,7 +29,7 @@ test('private chunks never get a citation marker or become a source', () => {
 
 test('linkCitations links known public slugs and drops unknown ones', () => {
   const known = new Map([['billing', { slug: 'billing', path: 'account/billing', title: 'Billing' }]])
-  assert.equal(linkCitations('See [[billing]].', known), 'See [Billing](/help/account/billing).')
+  assert.equal(linkCitations('See [[billing]].', known), 'See [Billing](/articles/account/billing).')
   assert.equal(linkCitations('See [[support-playbook]].', known), 'See .')
   assert.deepEqual(citedSlugs('[[billing]] and [[billing]] and [[nope]]', known), [{ slug: 'billing', path: 'account/billing', title: 'Billing' }])
 })

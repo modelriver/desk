@@ -2,6 +2,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import { Image } from '@tiptap/extension-image'
 import { Markdown } from '@tiptap/markdown'
+import { isImageSrc } from './media-core.ts'
 
 // What the article editor can write. Everything here has a plain Markdown
 // form, so the file on disk stays readable and diffable; underline has none,
@@ -25,10 +26,8 @@ export function normalizeHref(input: string): string | null {
   return null
 }
 
-// Images are linked, not uploaded.
-export function isImageUrl(src: string): boolean {
-  return /^https:\/\/[^\s]+$/i.test(src.trim())
-}
+// An image's address: a web image (https://) or one uploaded here (/media/…).
+export const isImageUrl = isImageSrc
 
 export const articleExtensions = [
   StarterKit.configure({

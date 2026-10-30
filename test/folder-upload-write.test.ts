@@ -14,6 +14,8 @@ const { planFolderUpload } = await import('../src/lib/folder-upload.ts')
 const read = (rel: string) => fs.readFileSync(path.join(dataDir, rel), 'utf8')
 const meta = (rel: string) => JSON.parse(read(path.join(rel, '.desk.json'))) as { title?: string; order?: string[] }
 const names = (folder: { children: Array<{ name: string }> }) => folder.children.map((c) => c.name)
+// New Markdown uploads are saved as drafts: this front matter goes on top.
+const DRAFT = '---\nstatus: draft\n---\n\n'
 
 before(() => {
   fs.mkdirSync(path.join(dataDir, 'public'), { recursive: true })
@@ -31,8 +33,8 @@ test('a batch creates nested folders with their titles, in order, and writes eve
     ],
     { 'getting-started': 'Getting Started', 'getting-started/api-keys': 'API keys' },
   )
-  assert.equal(written, 3)
-  assert.equal(read('public/getting-started/api-keys/scopes.md'), '# Scopes')
+  assert.deepEqual(written.map((w) => w.draft), [true, true, true], 'new uploads are drafts')
+  assert.equal(read('public/getting-started/api-keys/scopes.md'), DRAFT + '# Scopes')
   assert.equal(meta('public/getting-started').title, 'Getting Started')
   assert.equal(meta('public/getting-started/api-keys').title, 'API keys')
   // New folders come before new files, as on the Data page before anyone arranges it.
@@ -49,11 +51,30 @@ test('a later batch merges into existing folders and keeps their titles', () => 
 
 test('uploading over an article replaces it in place, by folder upload and by single upload', () => {
   tree.writeUploadBatch('public', [{ path: 'getting-started/faq.md', text: '# FAQ v2' }], {})
-  assert.equal(read('public/getting-started/faq.md'), '# FAQ v2')
+  assert.equal(read('public/getting-started/faq.md'), DRAFT + '# FAQ v2')
   // Used to be refused as a clash with a folder of the same name.
   tree.writeUpload('public', 'getting-started', 'faq.md', '# FAQ v3')
-  assert.equal(read('public/getting-started/faq.md'), '# FAQ v3')
+  assert.equal(read('public/getting-started/faq.md'), DRAFT + '# FAQ v3')
   assert.deepEqual(meta('public/getting-started').order, ['api-keys', 'quick-start.md', 'faq.md'], 'not listed twice')
+})
+
+test('new uploads are drafts, whatever their own front matter says; replacing a published article keeps it live', () => {
+  // A new file that claims to be published is still saved as a draft, with its other front matter kept.
+  const [single] = [tree.writeUpload('public', 'getting-started', 'Billing basics.md', '---\ntitle: Billing basics\nstatus: published\n---\n\n# Body')]
+  assert.equal(read(`public/${single}`), '---\ntitle: Billing basics\nstatus: draft\n---\n\n# Body')
+
+  // Publish it, then upload over it: it stays published, with the new content.
+  tree.setArticleStatus('public', 'getting-started/billing-basics.md', 'published')
+  const [replaced] = tree.writeUploadBatch('public', [{ path: 'getting-started/billing-basics.md', text: '---\ntitle: Billing basics\n---\n\n# New body' }], {})
+  assert.deepEqual(replaced, { path: 'getting-started/billing-basics.md', draft: false })
+  assert.equal(read('public/getting-started/billing-basics.md'), '---\ntitle: Billing basics\n---\n\n# New body')
+  // Even when the new content says it's a draft: the article's status is what's kept.
+  tree.writeUpload('public', 'getting-started', 'billing-basics.md', '---\nstatus: draft\n---\n# Newer')
+  assert.equal(read('public/getting-started/billing-basics.md'), '# Newer')
+
+  // A draft replaced stays a draft.
+  tree.writeUpload('public', 'getting-started', 'faq.md', '# FAQ v4')
+  assert.equal(read('public/getting-started/faq.md'), DRAFT + '# FAQ v4')
 })
 
 test('a batch with any problem writes nothing', () => {
@@ -141,7 +162,7 @@ test('the plan from the live tree and the writer agree, end to end', () => {
     result.plan.files.map((f) => ({ path: f.path, text: `# ${f.source}` })),
     titles,
   )
-  assert.equal(read('public/billing/invoices/refund-policy.md'), '# Billing/Invoices/Refund policy.md')
+  assert.equal(read('public/billing/invoices/refund-policy.md'), DRAFT + '# Billing/Invoices/Refund policy.md')
   assert.equal(meta('public/billing').title, 'Billing')
   assert.equal(meta('public/billing/invoices').title, 'Invoices')
   assert.deepEqual(result.plan.skipped, [{ source: 'Billing/.DS_Store', reason: 'hidden' }])
@@ -149,4 +170,50 @@ test('the plan from the live tree and the writer agree, end to end', () => {
   // The same upload again is all replacements.
   const again = planFolderUpload({ visibility: 'public', target: '', entries, tree: tree.readTree('public'), allowed: ['.md'], maxBytes: tree.MAX_FILE_BYTES })
   assert.ok(again.ok && again.plan.files.every((f) => f.replaces) && again.plan.folders.length === 0)
+})
+
+test('publishing and unpublishing many files at once', () => {
+  const items = [
+    { visibility: 'public' as const, path: 'getting-started/quick-start.md' },
+    { visibility: 'public' as const, path: 'getting-started/api-keys/scopes.md' },
+    { visibility: 'public' as const, path: 'getting-started/billing-basics.md' },
+  ]
+  // billing-basics.md is already published: only the two drafts change.
+  assert.equal(tree.setArticleStatuses(items, 'published'), 2)
+  assert.equal(read('public/getting-started/api-keys/scopes.md'), '# Scopes')
+  const statuses = () => items.map((i) => tree.readArticle(i.visibility, i.path).status)
+  assert.deepEqual(statuses(), ['published', 'published', 'published'])
+
+  assert.equal(tree.setArticleStatuses(items, 'draft'), 3)
+  assert.deepEqual(statuses(), ['draft', 'draft', 'draft'])
+  assert.equal(tree.setArticleStatuses(items, 'draft'), 0, 'already drafts: nothing to change')
+})
+
+test('a bulk change with any file that’s gone or can’t be a draft changes nothing', () => {
+  const before = read('public/getting-started/quick-start.md')
+  assert.throws(
+    () =>
+      tree.setArticleStatuses(
+        [
+          { visibility: 'public', path: 'getting-started/quick-start.md' },
+          { visibility: 'public', path: 'getting-started/gone.md' },
+        ],
+        'published',
+      ),
+    /no longer exists/,
+  )
+  tree.writeUploadBatch('private', [{ path: 'ops/runbook.txt', text: 'Restart it' }], {})
+  assert.throws(
+    () =>
+      tree.setArticleStatuses(
+        [
+          { visibility: 'public', path: 'getting-started/quick-start.md' },
+          { visibility: 'private', path: 'ops/runbook.txt' },
+        ],
+        'published',
+      ),
+    /can’t be drafts/,
+  )
+  assert.throws(() => tree.setArticleStatuses([{ visibility: 'public', path: '../escape.md' }], 'published'), /Invalid/)
+  assert.equal(read('public/getting-started/quick-start.md'), before)
 })

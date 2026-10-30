@@ -1,7 +1,7 @@
 import { createHash, createHmac } from 'node:crypto'
 
-// AWS Signature Version 4, just enough to call one AWS API with fetch (used
-// for Amazon SES), so the app doesn't need the AWS SDK.
+// AWS Signature Version 4, just enough to call AWS APIs with fetch (Amazon SES
+// for email, S3-compatible storage for images), so the app doesn't need the AWS SDK.
 // https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_sigv-create-signed-request.html
 
 export interface AwsCredentials {
@@ -10,7 +10,9 @@ export interface AwsCredentials {
   sessionToken?: string
 }
 
-const sha256 = (data: string) => createHash('sha256').update(data, 'utf8').digest('hex')
+// Strings are hashed as UTF-8; bytes (an image) as they are.
+export const sha256Hex = (data: string | Uint8Array) =>
+  (typeof data === 'string' ? createHash('sha256').update(data, 'utf8') : createHash('sha256').update(data)).digest('hex')
 const hmac = (key: Buffer | string, data: string) => createHmac('sha256', key).update(data, 'utf8').digest()
 
 // Returns the headers to send: the ones given plus host, x-amz-date (and the
@@ -19,7 +21,7 @@ export function signAwsRequest(input: {
   method: string
   url: string
   headers: Record<string, string>
-  body: string
+  body: string | Uint8Array
   region: string
   service: string
   credentials: AwsCredentials
@@ -49,11 +51,12 @@ export function signAwsRequest(input: {
     query,
     names.map((n) => `${n}:${lower[n]}\n`).join(''),
     signedHeaders,
-    sha256(input.body),
+    // S3 also wants this hash sent as x-amz-content-sha256 (see media.server.ts).
+    sha256Hex(input.body),
   ].join('\n')
 
   const scope = `${date}/${input.region}/${input.service}/aws4_request`
-  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256(canonicalRequest)].join('\n')
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256Hex(canonicalRequest)].join('\n')
   const key = hmac(hmac(hmac(hmac(`AWS4${input.credentials.secretAccessKey}`, date), input.region), input.service), 'aws4_request')
   const signature = createHmac('sha256', key).update(stringToSign, 'utf8').digest('hex')
 

@@ -11,6 +11,7 @@ import { errorMessage } from '../../lib/errors.ts'
 // Every team member's own settings: who they are, which emails they get and
 // their password. The app's settings are separate and admin-only.
 export const Route = createFileRoute('/dashboard/account')({
+  head: () => ({ meta: [{ title: 'Account · Dashboard' }] }),
   loader: () => getMyAccount(),
   errorComponent: ({ error }) => (
     <>

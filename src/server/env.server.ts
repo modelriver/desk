@@ -1,13 +1,17 @@
 import path from 'node:path'
+import { readMediaStorage } from './media-config.server.ts'
+
+const dataDir = path.resolve(process.env.DATA_DIR ?? './examples/data')
 
 // Read once; every setting comes from process.env (loaded with node --env-file).
 export const env = {
   modelriverApiKey: process.env.MODELRIVER_API_KEY ?? '',
   modelriverApiUrl: (process.env.MODELRIVER_API_URL || 'https://api.modelriver.com/v1').replace(/\/+$/, ''),
   workflow: process.env.MODELRIVER_WORKFLOW ?? 'support_assistant',
-  dataDir: path.resolve(process.env.DATA_DIR ?? './examples/data'),
+  dataDir,
   databasePath: path.resolve(process.env.DATABASE_PATH ?? './var/support.db'),
-  publicRepoUrl: process.env.PUBLIC_REPO_URL ?? 'https://github.com/modelriver/desk',
+  // Where "Open source, built on ModelRiver" links (help center footer, chat widget).
+  publicRepoUrl: process.env.PUBLIC_REPO_URL || 'https://modelriver.com/desk',
   production: process.env.NODE_ENV === 'production',
   // Reverse proxies in front of the app that append to X-Forwarded-For
   // (nginx = 1, Cloudflare -> nginx = 2).
@@ -50,6 +54,8 @@ export const env = {
   // (10.x, 192.168.x, localhost...). Off by default so a connector URL can't be
   // pointed at internal services.
   allowPrivateConnectorUrls: boolEnv('DESK_ALLOW_PRIVATE_CONNECTOR_URLS', false),
+  // Images uploaded into articles: a folder here, or S3-compatible storage (see media-config.server.ts).
+  media: readMediaStorage(process.env, dataDir),
 }
 
 if (env.twoFactorDisabled) {

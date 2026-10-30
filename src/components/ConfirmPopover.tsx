@@ -80,7 +80,7 @@ export function ConfirmPopover({
             }
           }}
           className={cn(
-            'absolute right-0 z-40 w-72 rounded-lg border border-border bg-card p-3.5 text-left shadow-lg shadow-black/10',
+            'absolute right-0 z-40 w-72 rounded-lg border border-border bg-card p-3.5 text-left',
             openUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
           )}
         >

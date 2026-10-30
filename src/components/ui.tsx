@@ -5,7 +5,7 @@ import { cn } from '../lib/cn.ts'
 // dependency list short. Variants are plain class maps.
 
 const buttonBase =
-  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ' +
+  'inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap font-medium ' +
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 cursor-pointer'
 
 const buttonVariants = {
@@ -14,6 +14,8 @@ const buttonVariants = {
   outline: 'border border-input bg-card text-foreground hover:bg-muted',
   ghost: 'text-foreground hover:bg-muted',
   destructive: 'text-destructive hover:bg-destructive/10',
+  // A confirmed removal: the one solid red button, in a confirmation's footer.
+  danger: 'bg-destructive text-white hover:bg-destructive/90',
   // Quiet until hovered, then red: for close/remove buttons on list rows.
   // Stays red while its confirmation is open (aria-expanded).
   'ghost-destructive':
@@ -21,14 +23,16 @@ const buttonVariants = {
   link: 'text-primary underline-offset-4 hover:underline px-0 h-auto',
 } as const
 
+// One compact scale for every button in the dashboard and the help center:
+// 28px small, 32px default, 36px large. Text size comes with the size.
 const buttonSizes = {
-  sm: 'h-8 px-3 text-[13px]',
-  default: 'h-9 px-4',
-  lg: 'h-10 px-5',
-  icon: 'size-9',
-  'icon-sm': 'size-8',
-  // No size classes: the caller sets height and padding itself.
-  none: '',
+  sm: 'h-7 px-2.5 text-xs',
+  default: 'h-8 px-3 text-[13px]',
+  lg: 'h-9 px-4 text-sm',
+  icon: 'size-8 text-[13px]',
+  'icon-sm': 'size-7 text-[13px]',
+  // No height or padding: the caller sets them.
+  none: 'text-sm',
 } as const
 
 // ComponentProps includes ref, which React 19 passes through as a normal prop.
@@ -55,13 +59,13 @@ const field =
 
 // ComponentProps includes ref, which React 19 passes through as a normal prop.
 export function Input({ className, ...props }: ComponentProps<'input'>) {
-  const height = /(^|\s)h-/.test(className ?? '') ? '' : 'h-9'
+  const height = /(^|\s)h-/.test(className ?? '') ? '' : 'h-8'
   return <input className={cn(field, height, className)} {...props} />
 }
 
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select className={cn(field, 'h-9 appearance-none bg-no-repeat pr-8', className)} style={{ backgroundImage: CHEVRON, backgroundPosition: 'right 0.6rem center', backgroundSize: '14px' }} {...props}>
+    <select className={cn(field, 'h-8 appearance-none bg-no-repeat pr-8', className)} style={{ backgroundImage: CHEVRON, backgroundPosition: 'right 0.6rem center', backgroundSize: '14px' }} {...props}>
       {children}
     </select>
   )
@@ -119,7 +123,7 @@ export function Switch({
       )}
       {...props}
     >
-      <span className={cn('block size-4 rounded-full bg-background shadow-sm', checked ? 'translate-x-4' : 'translate-x-0.5')} />
+      <span className={cn('block size-4 rounded-full bg-background', checked ? 'translate-x-4' : 'translate-x-0.5')} />
     </button>
   )
 }
@@ -127,19 +131,28 @@ export function Switch({
 // A checkbox in the theme's colours. The real input stays (keyboard, forms,
 // screen readers) with the browser's look turned off; the tick is drawn over
 // it and shows the moment it's checked. Put it in a <label> with its text.
-export function Checkbox({ className, ...props }: Omit<ComponentProps<'input'>, 'type'>) {
+// `indeterminate` shows a dash for "some of these" (a folder with some files selected).
+export function Checkbox({ className, indeterminate = false, ...props }: Omit<ComponentProps<'input'>, 'type'> & { indeterminate?: boolean }) {
   return (
     <span className={cn('inline-grid size-4 shrink-0 place-items-center', className)}>
       <input
         type="checkbox"
+        ref={(el) => {
+          if (el) el.indeterminate = indeterminate
+        }}
         className={cn(
           'peer col-start-1 row-start-1 size-4 cursor-pointer appearance-none rounded-[5px] border border-input bg-card',
-          'enabled:not-checked:hover:border-muted-foreground checked:border-primary checked:bg-primary',
+          'enabled:not-checked:hover:border-muted-foreground checked:border-primary checked:bg-primary indeterminate:border-primary indeterminate:bg-primary',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
           'disabled:cursor-default disabled:opacity-50',
         )}
         {...props}
       />
+      {indeterminate && (
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="pointer-events-none col-start-1 row-start-1 size-3 text-primary-foreground" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+          <path d="M4 8h8" />
+        </svg>
+      )}
       <svg
         viewBox="0 0 16 16"
         aria-hidden="true"
@@ -174,7 +187,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
 
 export function Notice({ tone, children }: { tone: 'error' | 'success'; children: ReactNode }) {
   return (
-    <p role={tone === 'error' ? 'alert' : 'status'} className={cn('text-sm', tone === 'error' ? 'text-destructive' : 'text-success')}>
+    <p role={tone === 'error' ? 'alert' : 'status'} className={cn('text-[13px]', tone === 'error' ? 'text-destructive' : 'text-success')}>
       {children}
     </p>
   )
@@ -195,7 +208,7 @@ export function Section({ title, description, children }: { title: string; descr
   return (
     <section>
       <h2 className="text-sm font-semibold">{title}</h2>
-      {description && <p className="mt-0.5 max-w-prose text-sm text-muted-foreground">{description}</p>}
+      {description && <p className="mt-0.5 max-w-prose text-[13px] text-muted-foreground">{description}</p>}
       <Card className="mt-2 overflow-hidden">{children}</Card>
     </section>
   )

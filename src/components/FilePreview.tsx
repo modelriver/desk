@@ -8,6 +8,7 @@ import { ExternalIcon, PencilIcon, XIcon } from './icons.tsx'
 import { RelativeTime } from './RelativeTime.tsx'
 import { BusyIcon } from './BusyIcon.tsx'
 import { errorMessage } from '../lib/errors.ts'
+import { articleUrl } from '../lib/help-path.ts'
 
 type Preview = Awaited<ReturnType<typeof readDataFile>>
 
@@ -53,7 +54,7 @@ export function FilePreview({
       // Clicking the backdrop (the dialog element itself, outside the panel) closes it.
       onClick={(e) => e.target === e.currentTarget && dialog.current?.close()}
       aria-label={file ? `Preview of ${file.name}` : 'File preview'}
-      className="m-auto h-[min(85dvh,56rem)] w-[min(52rem,calc(100vw-2rem))] max-w-none overflow-hidden rounded-2xl border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/40"
+      className="m-auto h-[min(85dvh,56rem)] w-[min(52rem,calc(100vw-2rem))] max-w-none overflow-hidden rounded-2xl border border-border bg-card p-0 text-foreground backdrop:bg-black/40"
     >
       {file && (
         <div className="flex h-full flex-col">
@@ -72,7 +73,7 @@ export function FilePreview({
               )}
             </div>
             {preview?.helpPath && (
-              <a href={`/help/${preview.helpPath}`} target="_blank" rel="noopener noreferrer" className={buttonClass('outline', 'sm')}>
+              <a href={articleUrl(preview.helpPath)} target="_blank" rel="noopener noreferrer" className={buttonClass('outline', 'sm')}>
                 <ExternalIcon size={14} />
                 Open in help center
               </a>

@@ -11,3 +11,5 @@ dist/
 .DS_Store
 .tanstack/
 .local/
+# Images uploaded while trying the app on the example data.
+/examples/data/media/

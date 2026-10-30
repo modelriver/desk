@@ -18,6 +18,7 @@ import { BusyIcon } from '../../components/BusyIcon.tsx'
 import { errorMessage } from '../../lib/errors.ts'
 
 export const Route = createFileRoute('/dashboard/c/$sessionId')({
+  head: () => ({ meta: [{ title: 'Conversation · Dashboard' }] }),
   loader: ({ params }) => getTranscript({ data: { sessionId: params.sessionId } }),
   errorComponent: ({ error }) => <LoadError title="Couldn’t load this conversation" error={error} />,
   component: Transcript,
@@ -116,7 +117,7 @@ function Transcript() {
 
   return (
     <div className="flex min-h-[calc(100dvh-4rem)] flex-col">
-      <Link to="/dashboard" className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+      <Link to="/dashboard" className="inline-flex w-fit items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground">
         <ArrowLeftIcon size={14} />
         Conversations
       </Link>
@@ -225,7 +226,7 @@ function Transcript() {
       </div>
 
       {archived && (
-        <div role="status" className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+        <div role="status" className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-4 py-3 text-[13px]">
           <ArchiveIcon size={16} className="shrink-0 text-muted-foreground" />
           <p className="min-w-0 flex-1">
             Archived <RelativeTime iso={t.archivedAt!} />.{' '}
@@ -317,7 +318,7 @@ function Transcript() {
 
       <div className="sticky bottom-0 mt-8 bg-background pt-2 pb-4">
         {readOnly ? (
-          <p className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+          <p className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[13px] text-muted-foreground">
             <LockIcon size={14} />
             {ended && t.endedAt ? (
               <span>
@@ -329,7 +330,7 @@ function Transcript() {
           </p>
         ) : otherHandler ? (
           // One person per conversation, so two people never answer at once.
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-[13px]">
             <p className="min-w-0 flex-1 text-muted-foreground">
               <span className="font-medium text-foreground">{otherHandler.name} is handling this conversation.</span> Take it over
               if you need to step in; replies then come from you.
@@ -344,7 +345,7 @@ function Transcript() {
               e.preventDefault()
               sendReply()
             }}
-            className="rounded-xl border border-input bg-card p-2 shadow-sm focus-within:border-ring"
+            className="rounded-xl border border-input bg-card p-2 focus-within:border-ring"
           >
             <label htmlFor="reply" className="sr-only">
               Reply as a team member

@@ -9,13 +9,14 @@ import {
   moveDataItem,
   renameDataFolder,
   setArticleStatus,
+  setArticlesStatus,
+  setDataFolderDetails,
   uploadFile,
   uploadFolderBatch,
 } from '../../functions/data.ts'
 import {
   ArrowDownIcon,
   ArrowUpIcon,
-  BookIcon,
   ChevronRightIcon,
   CopyIcon,
   ExternalIcon,
@@ -28,28 +29,34 @@ import {
   FolderUploadIcon,
   GripIcon,
   LockIcon,
+  LogOutIcon,
   MoveIcon,
   PencilIcon,
+  PlusIcon,
   SearchIcon,
   SendIcon,
   TrashIcon,
+  UndoIcon,
   UploadIcon,
   XIcon,
 } from '../../components/icons.tsx'
 import { ActionsMenu, type MenuItem } from '../../components/ActionsMenu.tsx'
 import { FilePreview } from '../../components/FilePreview.tsx'
-import { ConfirmDialog, MoveDialog, type FolderChoice } from '../../components/DataDialogs.tsx'
+import { ConfirmDialog, FolderDetailsDialog, MoveDialog, type FolderChoice } from '../../components/DataDialogs.tsx'
+import { CollectionIcon } from '../../components/CollectionIcon.tsx'
 import { LoadError } from '../../components/LoadError.tsx'
 import { RelativeTime } from '../../components/RelativeTime.tsx'
-import { Button, PageHeader } from '../../components/ui.tsx'
+import { Button, Checkbox, PageHeader } from '../../components/ui.tsx'
 import { shortcutLabel, Tooltip } from '../../components/Tooltip.tsx'
 import { cn } from '../../lib/cn.ts'
+import { Segmented } from '../../components/Segmented.tsx'
 import { applyMove, type Move } from '../../lib/tree-edit.ts'
-import { helpPath } from '../../lib/help-path.ts'
+import { articleUrl, helpPath } from '../../lib/help-path.ts'
 import { BusyIcon } from '../../components/BusyIcon.tsx'
 import { errorMessage } from '../../lib/errors.ts'
 import { describeProblems, describeSkipped, foldersFor, packBatches, type UploadPlan } from '../../lib/folder-upload.ts'
 import { droppedEntries, pickedFolder, readDropped, type PickedFile } from '../../lib/dropped-files.ts'
+import { draftKeys, filesIn, folderState, matchesFilter, selectedFiles, selectionKey, toggleKeys } from '../../lib/selection.ts'
 
 // The knowledge base: everything the help center and the AI answer from, as
 // two trees (Public = help-center articles, Private = internal notes). Folders
@@ -57,13 +64,14 @@ import { droppedEntries, pickedFolder, readDropped, type PickedFile } from '../.
 // equivalent (Move to…, Move up/down) for keyboards and touch screens.
 
 export const Route = createFileRoute('/dashboard/data')({
+  head: () => ({ meta: [{ title: 'Knowledge · Dashboard' }] }),
   beforeLoad: ({ context }) => {
     if (context.user.role !== 'admin') throw redirect({ to: '/dashboard' })
   },
   loader: () => getDataTree(),
   errorComponent: ({ error }) => (
     <>
-      <PageHeader title="Data" />
+      <PageHeader title="Knowledge" />
       <LoadError title="Couldn’t read the data folder" error={error} />
     </>
   ),
@@ -98,17 +106,20 @@ interface Row {
 type DropAt = 'before' | 'after' | 'into'
 
 const MAX_DEPTH = 2
-const ROOTS: Record<Visibility, { title: string; detail: string; icon: typeof BookIcon; newLabel: string }> = {
+// Rows: each level of folders indents this much, so a child's icon sits under
+// its parent's title. TREE_START is where the tree starts in a row (after the
+// checkbox column): the top level's chevrons, the drop line and the guides.
+const INDENT_REM = 1.375
+const TREE_START = '2.125rem'
+const ROOTS: Record<Visibility, { title: string; detail: string; newLabel: string }> = {
   public: {
     title: 'Public',
-    detail: 'Help-center articles, shown to everyone and cited by the AI. Folders become sections.',
-    icon: BookIcon,
+    detail: 'On the help center, and cited by the AI. Folders are sections.',
     newLabel: 'New article',
   },
   private: {
     title: 'Private',
-    detail: 'Internal notes. The AI uses them but never shows, quotes or links them.',
-    icon: LockIcon,
+    detail: 'Only the AI reads these. Never shown, quoted or linked.',
     newLabel: 'New note',
   },
 }
@@ -121,6 +132,13 @@ const subtreeDepth = (f: Folder): number => {
   return subs.length ? 1 + Math.max(...subs.map(subtreeDepth)) : 0
 }
 const countFiles = (f: Folder): number => f.children.reduce((n, c) => n + (c.kind === 'file' ? 1 : countFiles(c)), 0)
+// What a help-center card counts: published articles, subfolders included.
+const publishedIn = (f: Folder): number => f.children.reduce((n, c) => n + (c.kind === 'file' ? Number(!c.draft && c.name.endsWith('.md')) : publishedIn(c)), 0)
+// "articles" when they're all public, "notes" when all private, "files" when mixed.
+const nounFor = (files: Array<{ visibility: Visibility }>, n = files.length) => {
+  const kind = files.every((f) => f.visibility === 'public') ? 'article' : files.every((f) => f.visibility === 'private') ? 'note' : 'file'
+  return n === 1 ? kind : `${kind}s`
+}
 const itemOf = (visibility: Visibility, node: Node): Item => ({ visibility, path: node.path, kind: node.kind, name: node.name, title: node.title })
 
 function findNode(root: Folder, path: string): Node | null {
@@ -209,8 +227,18 @@ function DataPage() {
   const checkUpload = useServerFn(checkFolderUpload)
   const uploadBatch = useServerFn(uploadFolderBatch)
   const setStatus$ = useServerFn(setArticleStatus)
+  const setStatuses = useServerFn(setArticlesStatus)
+  const saveDetails = useServerFn(setDataFolderDetails)
 
   const { collapsed, toggle } = useCollapsed()
+  // Files ticked to publish or unpublish together, by selectionKey. Uploads
+  // select their new drafts, so publishing them is one click away.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  // Everything, or only drafts (to review and publish them).
+  const [show, setShow] = useState<'all' | 'drafts'>('all')
+  const [bulk, setBulk] = useState<'published' | 'draft' | null>(null)
+  // A public folder's card (description and icon) being edited.
+  const [details, setDetails] = useState<Folder | null>(null)
   const [filter, setFilter] = useState('')
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -232,6 +260,16 @@ function DataPage() {
   const changes = arrangement?.moves.length ?? 0
   // What's on screen: the saved tree, or the arrangement being made.
   const view = arrangement?.draft ?? data
+  // What's selected and still there, in tree order.
+  const selection = useMemo(() => selectedFiles(data, selected), [data, selected])
+  const selectedDrafts = selection.filter((f) => f.draft)
+  const selectedLive = selection.filter((f) => !f.draft)
+  // What the confirmation acts on, and the rest of the selection it leaves alone.
+  const bulkFiles = bulk === 'published' ? selectedDrafts : selectedLive
+  const bulkOthers = bulk === 'published' ? selectedLive.length : selectedDrafts.length
+  const allDrafts = useMemo(() => draftKeys(data, filter.trim().toLowerCase()), [data, filter])
+  const selectKeys = (keys: string[]) => setSelected((s) => toggleKeys(s, keys))
+  const clearSelection = () => setSelected(new Set())
 
   // Status messages fade after a while.
   useEffect(() => {
@@ -257,8 +295,10 @@ function DataPage() {
 
   const startArranging = () => {
     setFilter('')
+    setShow('all')
     setEditing(null)
     setStatus(null)
+    clearSelection()
     setArrangement({ draft: data, moves: [], moved: new Set(), history: [] })
   }
   const stopArranging = () => {
@@ -315,6 +355,18 @@ function DataPage() {
     }
   }
 
+  // Escape clears a selection (outside fields and dialogs, which use it themselves).
+  const hasSelection = selection.length > 0
+  useEffect(() => {
+    if (!hasSelection || arranging) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || (e.target instanceof HTMLElement && e.target.closest('input:not([type=checkbox]), textarea, dialog, [role=menu]'))) return
+      setSelected(new Set())
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [hasSelection, arranging])
+
   // While arranging: ⌘S saves, ⌘Z undoes, Escape cancels.
   const keys = useRef({ save: saveArrangement, undo: undoMove, cancel: cancelArranging })
   keys.current = { save: saveArrangement, undo: undoMove, cancel: cancelArranging }
@@ -344,15 +396,40 @@ function DataPage() {
     const list = [...files]
     if (!list.length) return
     void run(async () => {
+      const drafts: string[] = []
       for (const file of list) {
         const form = new FormData()
         form.set('visibility', visibility)
         form.set('folder', folder)
         form.set('file', file)
-        await upload({ data: form })
+        const result = await upload({ data: form })
+        if (result.draft) drafts.push(selectionKey(visibility, result.path))
       }
-      return { text: list.length === 1 ? `Uploaded ${list[0]!.name}.` : `Uploaded ${list.length} files.` }
+      selectUploaded(drafts)
+      return { text: uploadedMessage(list.length === 1 ? list[0]!.name : `${list.length} files`, list.length, drafts.length) }
     })
+  }
+
+  // Publish the selected drafts, or Unpublish the selected live files, after the confirmation.
+  const applyBulk = (status: 'published' | 'draft') => {
+    const files = status === 'published' ? selectedDrafts : selectedLive
+    void run(async () => {
+      const { changed } = await setStatuses({ data: { items: files.map(({ visibility, path }) => ({ visibility, path })), status } })
+      setBulk(null)
+      clearSelection()
+      const noun = nounFor(files, changed)
+      return { text: status === 'published' ? `Published ${changed} ${noun}.` : `Unpublished ${changed} ${noun}. ${changed === 1 ? 'It’s a draft' : 'They’re drafts'} now.` }
+    })
+  }
+
+  // New uploads are drafts: select them, so publishing is one click away.
+  const selectUploaded = (keys: string[]) => {
+    if (keys.length) setSelected((s) => new Set([...s, ...keys]))
+  }
+  const uploadedMessage = (what: string, total: number, drafts: number, extra = '') => {
+    if (!drafts) return `Uploaded ${what}.${extra}`
+    const which = drafts < total ? `${drafts} of them are drafts` : total === 1 ? 'It’s a draft' : 'They’re drafts'
+    return `Uploaded ${what}.${extra} ${which}, selected and ready to publish.`
   }
 
   // A whole folder: checked on the server first, so nothing is written if any
@@ -376,6 +453,7 @@ function DataPage() {
     const titles = Object.fromEntries(plan.folders.map((f) => [f.path, f.title]))
     const items = plan.files.map((f) => ({ path: f.path, file: bySource.get(f.source)!, size: bySource.get(f.source)!.size }))
     const total = items.length
+    const drafts: string[] = []
     let done = 0
     try {
       for (const batch of packBatches(items)) {
@@ -386,19 +464,23 @@ function DataPage() {
           form.append('path', item.path)
           form.append('file', item.file)
         }
-        await uploadBatch({ data: form })
+        const { files: written } = await uploadBatch({ data: form })
+        for (const f of written) if (f.draft) drafts.push(selectionKey(visibility, f.path))
         done += batch.length
         if (done < total) setStatus({ ok: true, text: `Uploading… ${done} of ${total} files.` })
       }
     } catch (err) {
       const reason = errorMessage(err, 'Something went wrong.')
       throw new Error(done ? `Uploaded ${done} of ${total} files, then stopped: ${reason}` : reason)
+    } finally {
+      // Whatever made it in is selected, even when a later batch failed.
+      selectUploaded(drafts)
     }
     toggle(keyOf(visibility, folder), true)
     for (const f of plan.folders) toggle(keyOf(visibility, f.path), true)
     const made = plan.folders.length ? ` and made ${plan.folders.length} folder${plan.folders.length === 1 ? '' : 's'}` : ''
     const skipped = describeSkipped(plan.skipped, visibility)
-    return { text: `Uploaded ${total} file${total === 1 ? '' : 's'}${made}.${skipped ? ` ${skipped}` : ''}` }
+    return { text: uploadedMessage(`${total} file${total === 1 ? '' : 's'}${made}`, total, drafts.length, skipped ? ` ${skipped}` : '') }
   }
 
   // Every folder, for "Move to…".
@@ -420,12 +502,16 @@ function DataPage() {
     collapsed,
     toggle,
     filter: filter.trim().toLowerCase(),
+    draftsOnly: show === 'drafts',
     busy,
     editing,
     setEditing,
     onMove: moveItem,
     onUpload: uploadFiles,
     onUploadFolder: uploadFolder,
+    selected,
+    selecting: hasSelection,
+    onSelect: selectKeys,
     onRename: (visibility, path, title) => void run(async () => (await rename({ data: { visibility, path, title } }), { text: `Renamed to “${title}”.` })),
     onCreateFolder: (visibility, parent, title) =>
       void run(async () => {
@@ -439,6 +525,7 @@ function DataPage() {
       setDeleting({ ...item, files: node?.kind === 'folder' ? countFiles(node) : 1 })
     },
     onPickMove: setMoving,
+    onEditDetails: setDetails,
     onPreview: (item) => setPreviewing({ visibility: item.visibility, path: item.path, name: item.name }),
     onSetStatus: (item, status, title) => setStatusChange({ item, status, title }),
     onAskUpload: (visibility, folder) => {
@@ -457,29 +544,37 @@ function DataPage() {
   return (
     <>
       <PageHeader
-        title="Data"
-        description="What the help center and the AI answer from. Published changes go live straight away; drafts stay out until you publish them."
+        title="Knowledge"
+        description="Help-center articles, and private notes only the AI reads. Drafts stay hidden until you publish them."
         actions={
           arranging ? undefined : (
             <>
               <Tooltip content="Reorder, or move things between folders">
-                <Button variant="outline" onClick={startArranging}>
+                <Button variant="ghost" onClick={startArranging}>
                   <MoveIcon size={15} />
                   Arrange
                 </Button>
               </Tooltip>
-              <Tooltip content="Add a section to the help center">
-                <Button variant="outline" onClick={() => setEditing({ kind: 'new-folder', visibility: 'public', parent: '' })}>
-                  <FolderPlusIcon size={15} />
-                  New folder
-                </Button>
-              </Tooltip>
-              <Tooltip content="Write a help-center article">
-                <Button onClick={() => void navigate({ to: '/dashboard/editor', search: { visibility: 'public', folder: '' } })}>
-                  <FilePlusIcon size={15} />
-                  New article
-                </Button>
-              </Tooltip>
+              <ActionsMenu
+                label="Add"
+                button={{
+                  variant: 'default',
+                  content: (
+                    <>
+                      <PlusIcon size={15} />
+                      Add
+                    </>
+                  ),
+                }}
+                items={[
+                  { label: 'Write an article', icon: <FilePlusIcon size={15} />, onSelect: () => shared.onNewArticle('public', '') },
+                  { label: 'Write an internal note', icon: <LockIcon size={15} />, onSelect: () => shared.onNewArticle('private', '') },
+                  { label: 'New section folder', icon: <FolderPlusIcon size={15} />, onSelect: () => setEditing({ kind: 'new-folder', visibility: 'public', parent: '' }) },
+                  'separator',
+                  { label: 'Upload articles', icon: <UploadIcon size={15} />, onSelect: () => shared.onAskUpload('public', '') },
+                  { label: 'Upload a folder of articles', icon: <FolderUploadIcon size={15} />, onSelect: () => shared.onAskUploadFolder('public', '') },
+                ]}
+              />
             </>
           )
         }
@@ -513,15 +608,18 @@ function DataPage() {
         <div
           role="region"
           aria-label="Arranging"
-          className="sticky top-3 z-30 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-primary/50 bg-card px-4 py-3 shadow-md"
+          data-motion=""
+          className="bar-in sticky top-3 z-30 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-primary/50 bg-card px-4 py-3"
         >
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">Arranging</p>
-            <p className="text-xs text-muted-foreground">Drag items, or use their menu to move them. The help center doesn’t change until you save.</p>
+            <p className="text-[13px] font-medium">
+              Arranging{' '}
+              <span className="font-normal text-muted-foreground tabular-nums" aria-live="polite">
+                · {changes === 0 ? 'no changes yet' : changes === 1 ? '1 change' : `${changes} changes`}
+              </span>
+            </p>
+            <p className="truncate text-xs text-muted-foreground">Drag to reorder, or use a row’s menu. Nothing goes live until you save.</p>
           </div>
-          <span className="text-sm text-muted-foreground tabular-nums" aria-live="polite">
-            {changes === 0 ? 'No changes yet' : changes === 1 ? '1 change' : `${changes} changes`}
-          </span>
           <div className="flex items-center gap-1.5">
             <Tooltip content="Undo the last move" shortcut={shortcutLabel('Z')}>
               <Button variant="ghost" size="sm" onClick={undoMove} aria-disabled={!arrangement.history.length || busy} className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
@@ -542,31 +640,87 @@ function DataPage() {
           </div>
         </div>
       ) : (
+        <>
+        {hasSelection && (
+          <div
+            role="region"
+            aria-label="Selected files"
+            data-motion=""
+            className="bar-in sticky top-3 z-30 mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-primary/50 bg-card px-4 py-3"
+          >
+            <div className="min-w-0 flex-1" aria-live="polite">
+              <p className="text-[13px] font-medium tabular-nums">{selection.length} selected</p>
+              <p className="text-xs text-muted-foreground tabular-nums">
+                {[selectedDrafts.length && `${selectedDrafts.length} draft${selectedDrafts.length === 1 ? '' : 's'}`, selectedLive.length && `${selectedLive.length} published`]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Tooltip content="Clear the selection" shortcut="Esc">
+                <Button variant="ghost" size="sm" onClick={clearSelection} disabled={busy}>
+                  Clear
+                </Button>
+              </Tooltip>
+              {selectedLive.length > 0 && (
+                <Button variant="outline" size="sm" onClick={() => setBulk('draft')} disabled={busy}>
+                  <EyeOffIcon size={14} />
+                  Unpublish {selectedLive.length}
+                </Button>
+              )}
+              {selectedDrafts.length > 0 && (
+                <Button size="sm" onClick={() => setBulk('published')} disabled={busy}>
+                  <BusyIcon busy={busy} size={14} />
+                  {!busy && <SendIcon size={14} />}
+                  Publish {selectedDrafts.length}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          <div className="relative w-full max-w-xs">
+          <div className="relative w-full max-w-sm">
             <SearchIcon size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground" />
             <label htmlFor="data-filter" className="sr-only">
-              Filter files
+              Search files
             </label>
             <input
               id="data-filter"
               type="search"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter by title or file name"
-              className="h-9 w-full rounded-md border border-input bg-card pr-3 pl-9 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring"
+              placeholder="Search by title or file name"
+              className="h-8 w-full rounded-md border border-input bg-card pr-3 pl-9 text-[13px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring"
             />
           </div>
-          <p className="text-xs text-muted-foreground">To reorder or move things, use Arrange. Drop files or folders from your computer onto a folder to upload them.</p>
+          <Segmented
+            label="Show"
+            size="sm"
+            value={show}
+            onChange={setShow}
+            options={[
+              { value: 'all', label: 'All' },
+              {
+                value: 'drafts',
+                label: (
+                  <>
+                    Drafts
+                    {allDrafts.length > 0 && <span className="text-xs font-normal text-muted-foreground tabular-nums">{allDrafts.length}</span>}
+                  </>
+                ),
+              },
+            ]}
+          />
         </div>
+        </>
       )}
 
       {status && (
         <div
           role={status.ok ? 'status' : 'alert'}
           className={cn(
-            'mb-4 flex items-center gap-3 rounded-lg border px-3.5 py-2 text-sm shadow-sm',
-            !arranging && 'sticky top-3 z-30',
+            'mb-4 flex items-center gap-3 rounded-lg border px-3.5 py-2 text-[13px]',
+            !arranging && !hasSelection && 'sticky top-3 z-30',
             status.ok ? 'border-border bg-card' : 'border-destructive/30 bg-destructive/5 text-destructive',
           )}
         >
@@ -579,7 +733,7 @@ function DataPage() {
         </div>
       )}
 
-      <div className="grid gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <Tree visibility="public" root={view.public} shared={shared} />
         <Tree visibility="private" root={view.private} shared={shared} />
       </div>
@@ -599,6 +753,7 @@ function DataPage() {
       <ConfirmDialog
         open={discarding}
         title={`Discard ${changes === 1 ? 'this change' : `${changes} changes`}?`}
+        icon={<UndoIcon size={18} />}
         confirmLabel="Discard"
         onClose={() => setDiscarding(false)}
         onConfirm={stopArranging}
@@ -608,6 +763,7 @@ function DataPage() {
       <ConfirmDialog
         open={blocker.status === 'blocked'}
         title="Leave without saving the new arrangement?"
+        icon={<LogOutIcon size={18} />}
         confirmLabel="Leave"
         onClose={() => blocker.reset?.()}
         onConfirm={() => blocker.proceed?.()}
@@ -619,6 +775,7 @@ function DataPage() {
         tone="primary"
         busy={busy}
         title={statusChange?.status === 'draft' ? `Unpublish “${statusChange.title}”?` : `Publish “${statusChange?.title ?? ''}”?`}
+        icon={statusChange?.status === 'draft' ? <EyeOffIcon size={18} /> : <SendIcon size={18} />}
         confirmLabel={statusChange?.status === 'draft' ? 'Unpublish' : 'Publish'}
         onClose={() => setStatusChange(null)}
         onConfirm={() => {
@@ -644,7 +801,7 @@ function DataPage() {
         ) : statusChange?.item.visibility === 'public' ? (
           <>
             It goes live on the help center at{' '}
-            <span className="font-mono text-xs">/help/{helpPath(statusChange.item.path, statusChange.item.path.slice(statusChange.item.path.lastIndexOf('/') + 1).replace(/\.md$/, ''))}</span>,
+            <span className="font-mono text-xs">{articleUrl(helpPath(statusChange.item.path, statusChange.item.path.slice(statusChange.item.path.lastIndexOf('/') + 1).replace(/\.md$/, '')))}</span>,
             and the AI starts answering from it.
           </>
         ) : (
@@ -654,6 +811,7 @@ function DataPage() {
       <ConfirmDialog
         open={deleting !== null}
         title={deleting?.kind === 'folder' ? `Delete the folder “${deleting.title}”?` : `Delete “${deleting?.title ?? ''}”?`}
+        icon={<TrashIcon size={18} />}
         confirmLabel="Delete"
         busy={busy}
         onClose={() => setDeleting(null)}
@@ -677,12 +835,40 @@ function DataPage() {
         This can’t be undone.
       </ConfirmDialog>
       <ConfirmDialog
+        open={bulk !== null}
+        tone={bulk === 'published' ? 'primary' : 'destructive'}
+        busy={busy}
+        title={`${bulk === 'published' ? 'Publish' : 'Unpublish'} ${bulkFiles.length} ${nounFor(bulkFiles)}?`}
+        icon={bulk === 'published' ? <SendIcon size={18} /> : <EyeOffIcon size={18} />}
+        items={bulkFiles.map((f) => f.title)}
+        note={bulkOthers > 0 ? `The ${bulkOthers} ${bulk === 'published' ? 'already published' : `draft${bulkOthers === 1 ? '' : 's'}`} in your selection stay${bulkOthers === 1 ? 's' : ''} as ${bulkOthers === 1 ? 'it is' : 'they are'}.` : undefined}
+        confirmLabel={bulk === 'published' ? `Publish ${selectedDrafts.length}` : `Unpublish ${selectedLive.length}`}
+        onClose={() => setBulk(null)}
+        onConfirm={() => bulk && applyBulk(bulk)}
+      >
+        {(() => {
+          const one = bulkFiles.length === 1
+          const anyPublic = bulkFiles.some((f) => f.visibility === 'public')
+          if (bulk === 'published') {
+            return anyPublic
+              ? `${one ? 'It goes' : 'They go'} live on the help center, and the AI starts answering from ${one ? 'it' : 'them'}.`
+              : `The AI starts answering from ${one ? 'it' : 'them'}.`
+          }
+          return `${anyPublic ? `${one ? 'It comes' : 'They come'} off the help center, and the AI` : 'The AI'} stops using ${one ? 'it' : 'them'}. ${
+            one ? 'It stays here as a draft' : 'They stay here as drafts'
+          }, so you can publish ${one ? 'it' : 'them'} again any time.`
+        })()}
+      </ConfirmDialog>
+      <ConfirmDialog
         open={replacing !== null}
         title={(() => {
           const n = replacing?.plan.files.filter((f) => f.replaces).length ?? 0
           return `Replace ${n === 1 ? 'a file that’s' : `${n} files that are`} already here?`
         })()}
         confirmLabel="Upload and replace"
+        icon={<UploadIcon size={18} />}
+        items={replacing?.plan.files.filter((f) => f.replaces).map((f) => f.path)}
+        note="New files in the upload are saved as drafts. This can’t be undone."
         busy={busy}
         onClose={() => setReplacing(null)}
         onConfirm={() => {
@@ -692,24 +878,23 @@ function DataPage() {
           void run(() => sendFolder(files, visibility, folder, plan))
         }}
       >
-        {(() => {
-          const paths = replacing?.plan.files.filter((f) => f.replaces).map((f) => f.path) ?? []
-          const shown = paths.slice(0, 3)
-          const rest = paths.length - shown.length
-          return (
-            <>
-              The upload has files with the same names as{' '}
-              {shown.map((p, i) => (
-                <span key={p}>
-                  {i > 0 && (i === shown.length - 1 && !rest ? ' and ' : ', ')}
-                  <span className="font-mono text-xs">{p}</span>
-                </span>
-              ))}
-              {rest > 0 && ` and ${rest} more`}. Their content will be replaced by the uploaded files. This can’t be undone.
-            </>
-          )
-        })()}
+        The uploaded files replace these. Each keeps its status, so a published article stays live with the new content.
       </ConfirmDialog>
+      <FolderDetailsDialog
+        folder={details}
+        articles={details ? publishedIn(details) : 0}
+        busy={busy}
+        onClose={() => setDetails(null)}
+        onSave={(next) => {
+          if (!details) return
+          const folder = details
+          void run(async () => {
+            await saveDetails({ data: { path: folder.path, ...next } })
+            setDetails(null)
+            return { text: `Updated the “${folder.title}” card on the help center.` }
+          })
+        }}
+      />
       <FilePreview file={previewing} onClose={() => setPreviewing(null)} />
     </>
   )
@@ -725,6 +910,8 @@ interface TreeShared {
   collapsed: Set<string>
   toggle: (key: string, open?: boolean) => void
   filter: string
+  // The Drafts view: only drafts show, and only they can be ticked.
+  draftsOnly: boolean
   busy: boolean
   editing: { kind: 'rename'; key: string } | { kind: 'new-folder'; visibility: Visibility; parent: string } | null
   setEditing: (e: TreeShared['editing']) => void
@@ -732,10 +919,18 @@ interface TreeShared {
   onUpload: (files: FileList, visibility: Visibility, folder: string) => void
   // A folder, with what's inside it; `read` collects the files.
   onUploadFolder: (read: () => Promise<PickedFile[]>, visibility: Visibility, folder: string) => void
+  // Files ticked for Publish or Unpublish (selectionKey), and whether any are,
+  // which keeps every checkbox showing rather than only on hover.
+  selected: ReadonlySet<string>
+  selecting: boolean
+  // Tick or untick these files: all of them, or none when they're all ticked.
+  onSelect: (keys: string[]) => void
   onRename: (visibility: Visibility, path: string, title: string) => void
   onCreateFolder: (visibility: Visibility, parent: string, title: string) => void
   onDelete: (item: Item) => void
   onPickMove: (item: Item) => void
+  // A public folder's description and icon, for its help-center card.
+  onEditDetails: (folder: Folder) => void
   onPreview: (item: Item) => void
   // Publish a draft, or Unpublish: move a published file back to draft.
   onSetStatus: (item: Item, status: 'published' | 'draft', title: string) => void
@@ -750,29 +945,34 @@ interface TreeShared {
 const dragging: { current: Item | null } = { current: null }
 
 function Tree({ visibility, root, shared }: { visibility: Visibility; root: Folder; shared: TreeShared }) {
-  const { collapsed, filter } = shared
+  const { collapsed, filter, draftsOnly } = shared
   const [drop, setDrop] = useState<{ key: string; at: DropAt; problem: string | null } | null>(null)
   const expandTimer = useRef<{ key: string; timer: ReturnType<typeof setTimeout> } | null>(null)
   const meta = ROOTS[visibility]
-  const Icon = meta.icon
+  const narrowed = filter !== '' || draftsOnly
 
-  // Rows in display order: open folders show their contents. A filter shows
-  // matching files with the folders around them, opened.
+  // Rows in display order: open folders show their contents. A search or the
+  // Drafts view shows matching files with the folders around them, opened.
   const rows = useMemo(() => {
     const out: Row[] = []
     const matches = (n: Node): boolean =>
-      n.kind === 'file' ? `${n.title} ${n.name}`.toLowerCase().includes(filter) : n.title.toLowerCase().includes(filter) || n.children.some(matches)
+      n.kind === 'file'
+        ? matchesFilter(n, filter, draftsOnly)
+        : (!draftsOnly && filter !== '' && n.title.toLowerCase().includes(filter)) || n.children.some(matches)
     const walk = (f: Folder, depth: number) => {
-      const visible = filter ? f.children.filter(matches) : f.children
+      const visible = narrowed ? f.children.filter(matches) : f.children
       const siblings = f.children.map((c) => c.name)
       visible.forEach((node) => {
         out.push({ key: keyOf(visibility, node.path), visibility, node, depth, parent: f.path, siblings, index: siblings.indexOf(node.name) })
-        if (node.kind === 'folder' && (filter || !collapsed.has(keyOf(visibility, node.path)))) walk(node, depth + 1)
+        if (node.kind === 'folder' && (narrowed || !collapsed.has(keyOf(visibility, node.path)))) walk(node, depth + 1)
       })
     }
     walk(root, 0)
     return out
-  }, [root, collapsed, filter, visibility])
+  }, [root, collapsed, filter, draftsOnly, narrowed, visibility])
+  // The header's checkbox: everything this section shows.
+  const sectionKeys = filesIn(visibility, root, filter, draftsOnly)
+  const sectionState = folderState(sectionKeys, shared.selected)
 
   const clearDrop = () => {
     setDrop(null)
@@ -840,53 +1040,51 @@ function Tree({ visibility, root, shared }: { visibility: Visibility; root: Fold
   const newFolderHere = shared.editing?.kind === 'new-folder' && shared.editing.visibility === visibility ? shared.editing.parent : null
 
   return (
-    <section aria-labelledby={`tree-${visibility}`} className="rounded-xl border border-border bg-card">
+    <section aria-labelledby={`tree-${visibility}`} className="min-w-0 rounded-xl border border-border bg-card">
       <div
         onDragOver={(e) => onDragOver(e, null)}
         onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Element) && clearDrop()}
         onDrop={(e) => onDrop(e, null)}
         className={cn(
-          'flex flex-wrap items-center gap-3 rounded-t-xl border-b border-border px-4 py-3',
+          'flex items-center gap-2 rounded-t-xl border-b border-border py-2.5 pr-2 pl-3',
           drop?.key === keyOf(visibility, '') && (drop.problem ? 'bg-destructive/5' : 'bg-primary/5 ring-2 ring-primary ring-inset'),
         )}
       >
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground" aria-hidden="true">
-          <Icon size={16} />
-        </span>
-        <div className="min-w-0 flex-1">
+        {/* Lined up with the rows' checkbox column. */}
+        {!shared.arranging && (
+          <label className={cn('grid size-4 shrink-0 place-items-center', sectionKeys.length ? 'cursor-pointer' : 'invisible')}>
+            <Checkbox
+              checked={sectionState === 'all'}
+              indeterminate={sectionState === 'some'}
+              disabled={!sectionKeys.length}
+              onChange={() => shared.onSelect(sectionKeys)}
+              aria-label={`Select ${draftsOnly ? 'every draft' : 'everything'} in ${meta.title}`}
+            />
+          </label>
+        )}
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2.5">
           <h2 id={`tree-${visibility}`} className="text-sm font-semibold">
-            {meta.title} <span className="font-normal text-muted-foreground">{countFiles(root)}</span>
+            {meta.title} <span className="font-normal text-muted-foreground tabular-nums">{countFiles(root)}</span>
           </h2>
-          <p className="text-xs text-muted-foreground">{meta.detail}</p>
+          <p className="max-w-full min-w-0 truncate text-xs text-muted-foreground">{meta.detail}</p>
         </div>
-        <div className={cn('flex items-center gap-1', shared.arranging && 'hidden')}>
-          <Tooltip content={visibility === 'public' ? 'Write an article for the help center' : 'Write an internal note for the AI'}>
-            <Button variant="ghost" size="sm" onClick={() => shared.onNewArticle(visibility, '')}>
-              <FilePlusIcon size={14} />
-              {meta.newLabel}
-            </Button>
-          </Tooltip>
-          <Tooltip content="New folder">
-            <Button variant="ghost" size="icon-sm" aria-label={`New folder in ${meta.title}`} onClick={() => shared.setEditing({ kind: 'new-folder', visibility, parent: '' })}>
-              <FolderPlusIcon size={15} />
-            </Button>
-          </Tooltip>
-          <Tooltip content={visibility === 'public' ? 'Upload Markdown (.md) files' : 'Upload .md or .txt files'}>
-            <Button variant="ghost" size="icon-sm" aria-label={`Upload files to ${meta.title}`} onClick={() => shared.onAskUpload(visibility, '')}>
-              <UploadIcon size={15} />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Upload a folder, keeping its folders">
-            <Button variant="ghost" size="icon-sm" aria-label={`Upload a folder to ${meta.title}`} onClick={() => shared.onAskUploadFolder(visibility, '')}>
-              <FolderUploadIcon size={15} />
-            </Button>
-          </Tooltip>
-        </div>
+        {!shared.arranging && (
+          <ActionsMenu
+            label={`Add to ${meta.title}`}
+            items={[
+              { label: meta.newLabel, icon: <FilePlusIcon size={15} />, onSelect: () => shared.onNewArticle(visibility, '') },
+              { label: 'New folder', icon: <FolderPlusIcon size={15} />, onSelect: () => shared.setEditing({ kind: 'new-folder', visibility, parent: '' }) },
+              'separator',
+              { label: 'Upload files', icon: <UploadIcon size={15} />, onSelect: () => shared.onAskUpload(visibility, '') },
+              { label: 'Upload a folder', icon: <FolderUploadIcon size={15} />, onSelect: () => shared.onAskUploadFolder(visibility, '') },
+            ]}
+          />
+        )}
       </div>
 
-      <ul className="py-1.5" onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Element) && clearDrop()}>
+      <ul onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Element) && clearDrop()}>
         {newFolderHere === '' && <NewFolderRow depth={0} shared={shared} visibility={visibility} parent="" />}
-        {rows.map((row) => (
+        {rows.map((row, i) => (
           <TreeRow
             key={row.key}
             row={row}
@@ -895,12 +1093,13 @@ function Tree({ visibility, root, shared }: { visibility: Visibility; root: Fold
             onDragOver={(e) => onDragOver(e, row)}
             onDrop={(e) => onDrop(e, row)}
             onDragEnd={clearDrop}
+            last={i === rows.length - 1}
             newFolderInside={newFolderHere === row.node.path && row.node.kind === 'folder'}
           />
         ))}
         {rows.length === 0 && newFolderHere === null && (
           <li className="px-4 py-8 text-center text-sm text-muted-foreground">
-            {filter ? 'Nothing matches the filter.' : visibility === 'public' ? 'No articles yet. Write one, or drop Markdown files or a folder here.' : 'No notes yet. Write one, or drop .md or .txt files or a folder here.'}
+            {draftsOnly && !filter ? 'No drafts here.' : narrowed ? 'Nothing matches the search.' : visibility === 'public' ? 'No articles yet. Write one, or drop Markdown files or a folder here.' : 'No notes yet. Write one, or drop .md or .txt files or a folder here.'}
           </li>
         )}
       </ul>
@@ -915,6 +1114,7 @@ function TreeRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  last,
   newFolderInside,
 }: {
   row: Row
@@ -923,16 +1123,23 @@ function TreeRow({
   onDragOver: (e: DragEvent) => void
   onDrop: (e: DragEvent) => void
   onDragEnd: () => void
+  // The section's last row: no line under it, the box's border closes it.
+  last: boolean
   newFolderInside: boolean
 }) {
   const { node, visibility, depth } = row
   const navigate = useNavigate()
   const item = itemOf(visibility, node)
   const isFolder = node.kind === 'folder'
-  const open = isFolder && (shared.filter !== '' || !shared.collapsed.has(row.key))
+  const open = isFolder && (shared.filter !== '' || shared.draftsOnly || !shared.collapsed.has(row.key))
   const renaming = shared.editing?.kind === 'rename' && shared.editing.key === row.key
-  const indent = { paddingLeft: `${0.75 + depth * 1.5}rem` }
+  // The checkbox column stays put; only the tree part is indented, a step per level.
+  const indent = `${depth * INDENT_REM}rem`
   const editorSearch = { visibility, path: node.path }
+
+  // The Markdown files this row selects (its checkbox, or a folder's menu): the file itself, or everything the filter shows in the folder.
+  const selectKeys = isFolder ? filesIn(visibility, node, shared.filter, shared.draftsOnly) : node.name.endsWith('.md') ? [selectionKey(visibility, node.path)] : []
+  const selectState = folderState(selectKeys, shared.selected)
 
   const moveBy = (step: -1 | 1) => {
     const target = row.index + step
@@ -961,6 +1168,10 @@ function TreeRow({
             : []),
           'separator',
           { label: 'Rename', icon: <PencilIcon size={15} />, onSelect: () => shared.setEditing({ kind: 'rename', key: row.key }) },
+          // Public folders are help-center sections, with a card of their own.
+          ...(visibility === 'public' && node.kind === 'folder'
+            ? [{ label: 'Icon & description…', icon: <CollectionIcon icon={node.icon} size={15} />, onSelect: () => shared.onEditDetails(node) }]
+            : []),
           'separator',
           { label: 'Delete folder', icon: <TrashIcon size={15} />, destructive: true, onSelect: () => shared.onDelete(item) },
         ]
@@ -978,11 +1189,11 @@ function TreeRow({
           // A draft isn't on the help center yet, so there's nothing to open or link to.
           ...(visibility === 'public' && node.kind === 'file' && !node.draft
             ? [
-                { label: 'Open in help center', icon: <ExternalIcon size={15} />, onSelect: () => window.open(`/help/${helpPath(node.path, node.slug)}`, '_blank', 'noopener') },
+                { label: 'Open in help center', icon: <ExternalIcon size={15} />, onSelect: () => window.open(articleUrl(helpPath(node.path, node.slug)), '_blank', 'noopener') },
                 {
                   label: 'Copy link',
                   icon: <CopyIcon size={15} />,
-                  onSelect: () => void navigator.clipboard?.writeText(`${location.origin}/help/${helpPath(node.path, node.slug)}`).then(() => shared.onStatus('Link copied.')),
+                  onSelect: () => void navigator.clipboard?.writeText(`${location.origin}${articleUrl(helpPath(node.path, node.slug))}`).then(() => shared.onStatus('Link copied.')),
                 },
               ]
             : []),
@@ -1007,39 +1218,83 @@ function TreeRow({
         onDragOver={onDragOver}
         onDrop={onDrop}
         className={cn(
-          'group relative mx-1.5 flex items-center gap-2 rounded-lg py-1.5 pr-1.5 hover:bg-muted/60',
+          'group relative flex items-center gap-1.5 py-1 pr-2 pl-3 last:rounded-b-xl',
           shared.arranging && 'cursor-grab active:cursor-grabbing',
-          moved && 'bg-primary/5',
+          (moved || (!isFolder && selectState === 'all')) && 'bg-primary/5',
           drop?.at === 'into' && (drop.problem ? 'bg-destructive/5' : 'bg-primary/5 ring-2 ring-primary ring-inset'),
         )}
-        style={indent}
       >
+        {/* Where this row sits in the tree: a faint line under each folder it's
+            in. The line between rows starts at the row's icon, so it nests with
+            the tree instead of crossing these. */}
+        {Array.from({ length: depth }, (_, level) => (
+          <span
+            key={level}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 w-px bg-border/70"
+            style={{ left: `calc(${TREE_START} + ${level * INDENT_REM}rem + 0.5rem)` }}
+          />
+        ))}
+        {!last && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute right-0 bottom-0 h-px bg-border/50"
+            style={{ left: `calc(${TREE_START} + ${indent} + 1.375rem)` }}
+          />
+        )}
         {/* Drop line above or below, at this row's indent. */}
         {drop && drop.at !== 'into' && (
           <span
             aria-hidden="true"
             className={cn('pointer-events-none absolute right-2 h-0.5 rounded-full', drop.problem ? 'bg-destructive' : 'bg-primary', drop.at === 'before' ? '-top-px' : '-bottom-px')}
-            style={{ left: indent.paddingLeft }}
+            style={{ left: `calc(${TREE_START} + ${indent})` }}
           />
         )}
-        {shared.arranging && <GripIcon size={14} className="absolute left-1 shrink-0 text-muted-foreground opacity-50 group-hover:opacity-100" aria-hidden="true" />}
-
-        {isFolder ? (
-          <Tooltip content={open ? 'Collapse' : 'Expand'}>
-            <button
-              type="button"
-              onClick={() => shared.toggle(row.key)}
-              aria-expanded={open}
-              aria-label={`${open ? 'Close' : 'Open'} ${node.title}`}
-              className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:text-foreground"
+        {/* Selecting: a narrow column of checkboxes, files and folders alike
+            (a folder's ticks everything in it). They show on hover, and on
+            every row while anything is selected; while arranging, the drag
+            handle shows there instead. */}
+        <span className="grid size-4 shrink-0 place-items-center">
+          {shared.arranging ? (
+            <GripIcon size={14} aria-hidden="true" className="text-muted-foreground opacity-0 group-hover:opacity-100" />
+          ) : selectKeys.length ? (
+            <label
+              className={cn(
+                'grid cursor-pointer place-items-center',
+                shared.selecting || selectState !== 'none'
+                  ? 'opacity-100'
+                  : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100',
+              )}
             >
-              <ChevronRightIcon size={14} className={cn(open && 'rotate-90')} />
-            </button>
-          </Tooltip>
-        ) : (
-          <span className="size-6 shrink-0" aria-hidden="true" />
-        )}
-        {isFolder ? <FolderIcon size={16} className="shrink-0 text-muted-foreground" /> : <FileIcon size={16} className="shrink-0 text-muted-foreground" />}
+              <Checkbox
+                checked={selectState === 'all'}
+                indeterminate={selectState === 'some'}
+                onChange={() => shared.onSelect(selectKeys)}
+                aria-label={isFolder ? `Select everything in ${node.title}` : `Select ${node.title}`}
+              />
+            </label>
+          ) : null}
+        </span>
+
+        {/* The tree: a folder's chevron (empty for files, so icons line up), then the icon. */}
+        <span className="grid size-4 shrink-0 place-items-center" style={{ marginLeft: indent }}>
+          {isFolder && (
+            <Tooltip content={open ? 'Collapse' : 'Expand'}>
+              <button
+                type="button"
+                onClick={() => shared.toggle(row.key)}
+                aria-expanded={open}
+                aria-label={`${open ? 'Close' : 'Open'} ${node.title}`}
+                className="grid size-4 shrink-0 place-items-center rounded text-muted-foreground outline-none hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground"
+              >
+                <ChevronRightIcon size={13} className={cn(open && 'rotate-90')} />
+              </button>
+            </Tooltip>
+          )}
+        </span>
+        <span className="grid size-4 shrink-0 place-items-center text-muted-foreground" aria-hidden="true">
+          {isFolder ? node.icon ? <CollectionIcon icon={node.icon} size={16} /> : <FolderIcon size={16} /> : <FileIcon size={16} />}
+        </span>
 
         <div className="min-w-0 flex-1">
           {renaming && isFolder ? (
@@ -1057,14 +1312,12 @@ function TreeRow({
               <span className="shrink-0 text-xs text-muted-foreground">{countFiles(node)}</span>
             </button>
           ) : shared.arranging ? (
-            <span className="flex w-full min-w-0 items-baseline gap-2">
-              <span className="truncate text-sm">{node.title}</span>
-              <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">{node.name}</span>
+            <span className="block w-full min-w-0 truncate text-sm" title={node.name}>
+              {node.title}
             </span>
           ) : (
-            <Link to="/dashboard/editor" search={editorSearch} className="flex w-full min-w-0 items-baseline gap-2" draggable={false}>
-              <span className="truncate text-sm underline-offset-4 group-hover:underline">{node.title}</span>
-              <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">{node.name}</span>
+            <Link to="/dashboard/editor" search={editorSearch} title={node.name} className="block w-full min-w-0 truncate text-sm underline-offset-4 hover:underline" draggable={false}>
+              {node.title}
             </Link>
           )}
         </div>
@@ -1091,8 +1344,9 @@ function TreeRow({
 
 function NewFolderRow({ depth, shared, visibility, parent }: { depth: number; shared: TreeShared; visibility: Visibility; parent: string }) {
   return (
-    <li className="mx-1.5 flex items-center gap-2 rounded-lg py-1.5 pr-1.5" style={{ paddingLeft: `${0.75 + depth * 1.5}rem` }}>
-      <span className="size-6 shrink-0" aria-hidden="true" />
+    <li className="flex items-center gap-1.5 py-1 pr-2 pl-3">
+      <span className="size-4 shrink-0" aria-hidden="true" />
+      <span className="size-4 shrink-0" style={{ marginLeft: `${depth * INDENT_REM}rem` }} aria-hidden="true" />
       <FolderIcon size={16} className="shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <InlineName
