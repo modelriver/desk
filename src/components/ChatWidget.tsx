@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useServerFn } from '@tanstack/react-start'
+import { useNavigate } from '@tanstack/react-router'
 import {
   applyIdentity,
   confirmEmailCode,
@@ -8,6 +9,7 @@ import {
   requestEmailCode,
   reconnectStream,
   handOffAfterAiError,
+  raiseTicket,
   liveConversation,
   reportUnanswered,
   requestHandoff,
@@ -25,18 +27,22 @@ import { CONVERSATION_UPDATED, LIVE_SAFETY_REFRESH_MS } from '../lib/live.ts'
 import type { Source } from '../lib/prompt-core.ts'
 import { Markdown } from './Markdown.tsx'
 import { HelpBot, type BotMood } from './HelpBot.tsx'
-import { Button, Input } from './ui.tsx'
+import { Button, Input, Select, Textarea } from './ui.tsx'
 import {
   ArrowUpIcon,
   BookIcon,
+  CollapseIcon,
+  ExpandIcon,
   HeadsetIcon,
   LogOutIcon,
+  TicketIcon,
   ShieldIcon,
   UserIcon,
   XIcon,
 } from './icons.tsx'
 import { ActionsMenu, type MenuItem } from './ActionsMenu.tsx'
 import { OtpInput } from './OtpInput.tsx'
+import { SuccessTick } from './SuccessTick.tsx'
 import { cn } from '../lib/cn.ts'
 import { onOpenChat } from '../lib/chat-bus.ts'
 import { deleteCookie, readCookie, writeCookie } from '../lib/client-cookie.ts'
@@ -62,10 +68,20 @@ interface AccountState {
   verificationExpired: boolean
   lookups: boolean
   canVerify: boolean
+  // Email codes can be sent: raising a ticket asks for one.
+  emailCodes: boolean
   lookupAlways: boolean
   lookupPatterns: string[]
 }
-const NO_ACCOUNT: AccountState = { verifiedEmail: null, verificationExpired: false, lookups: false, canVerify: false, lookupAlways: false, lookupPatterns: [] }
+const NO_ACCOUNT: AccountState = {
+  verifiedEmail: null,
+  verificationExpired: false,
+  lookups: false,
+  canVerify: false,
+  emailCodes: false,
+  lookupAlways: false,
+  lookupPatterns: [],
+}
 
 function wouldLookUp(account: AccountState, text: string): boolean {
   if (!account.lookups || !account.verifiedEmail) return false
@@ -99,6 +115,31 @@ interface Pending {
   startedAt: number
 }
 
+// The page the visitor expanded the chat from, so collapsing goes back there.
+const FROM_KEY = 'desk_chat_from'
+// Set by expand and collapse: the chat they lead to puts the cursor in the message box.
+const FOCUS_KEY = 'desk_chat_focus'
+
+function markFocus() {
+  try {
+    sessionStorage.setItem(FOCUS_KEY, '1')
+  } catch {
+    // Private mode: no focus hand-over.
+  }
+}
+
+// True once, for the chat that expand or collapse just opened.
+function takeFocus(): boolean {
+  try {
+    const set = sessionStorage.getItem(FOCUS_KEY) === '1'
+    sessionStorage.removeItem(FOCUS_KEY)
+    return set
+  } catch {
+    return false
+  }
+}
+export const CHAT_PAGE = '/chat'
+
 const loadPending = () => readCookie<Pending>(PENDING_COOKIE)
 const savePending = (p: Pending) => writeCookie(PENDING_COOKIE, { ...p, question: p.question.slice(0, 500) }, PENDING_MAX_AGE)
 const clearPending = () => deleteCookie(PENDING_COOKIE)
@@ -118,15 +159,22 @@ export function ChatWidget({
   repoUrl,
   brandName,
   embedded = false,
+  page = false,
   identityToken = null,
 }: {
   repoUrl: string
   brandName: string
+  // In an <iframe> on another site (/widget): fills it, nothing to close.
   embedded?: boolean
+  // The full-page chat at /chat, between the help center's header and footer.
+  page?: boolean
   // Signed by the site embedding the widget for a signed-in visitor (see README, Integrations).
   identityToken?: string | null
 }) {
-  const [open, setOpen] = useState(embedded)
+  // Embedded and the full page are always open; only the floating panel opens and closes.
+  const fixed = embedded || page
+  const [open, setOpen] = useState(fixed)
+  const navigate = useNavigate()
   const [profile, setProfile] = useState<Profile>(undefined)
   const [messages, setMessages] = useState<UiMessage[]>([])
   const lastReply = messages.findLast((m) => m.role === 'assistant' && !m.streaming && !m.error && m.content)
@@ -150,6 +198,18 @@ export function ChatWidget({
   // Why: they asked for a person, or the AI couldn't answer.
   const [handoffReason, setHandoffReason] = useState<HandoffReason | null>(null)
   const [account, setAccount] = useState<AccountState>(NO_ACCOUNT)
+  // "Talk with a person" is on in Settings. Off, asking for a person opens the
+  // leave-a-message card instead (the team can still join from the dashboard).
+  const [teamCanJoin, setTeamCanJoin] = useState(true)
+  // New tickets are on in Settings. Off, nothing offers the leave-a-message card.
+  const [ticketsOpen, setTicketsOpen] = useState(true)
+  // The subjects the Raise a ticket card offers (Tickets → Subjects); none: just the message.
+  const [ticketSubjects, setTicketSubjects] = useState<string[]>([])
+  const canRaiseTicket = !teamCanJoin && ticketsOpen
+  // The leave-a-message card: open, and whether this chat already sent one.
+  // 'menu' when the visitor opened it (it takes focus); 'reply' when the AI's answer did.
+  const [messageCard, setMessageCard] = useState<'menu' | 'reply' | null>(null)
+  const [messageSent, setMessageSent] = useState(false)
   // The verify-your-email card: open, and the question to ask again once verified.
   const [verify, setVerify] = useState<{ services: string[]; question: string | null; expired: boolean } | null>(null)
   // The question being sent, until its answer starts streaming.
@@ -203,6 +263,8 @@ export function ChatWidget({
     identityApplied.current = false
     setWaitingSince(null)
     setHandoffReason(null)
+    setMessageCard(null)
+    setMessageSent(false)
     clearPending()
   }, [])
 
@@ -239,6 +301,9 @@ export function ChatWidget({
       const res = await fetchConversation({ data: { fresh } })
       if (busyRef.current) return
       setKnown(new Map(res.articles.map((a) => [a.slug, a])))
+      setTeamCanJoin(res.teamCanJoin)
+      setTicketsOpen(res.ticketsOpen)
+      setTicketSubjects(res.ticketSubjects)
       if (!res.conversation) {
         setRetryAt(Date.now() + (res.retryAfterSeconds ?? 0) * 1000)
         if (res.closedFor != null) closedByTeam(res.closedFor)
@@ -320,10 +385,27 @@ export function ChatWidget({
   // Runs again for new messages and when the waiting card changes the list's height.
   const handoffShown = mode === 'human' && waitingSince !== null
   useLayoutEffect(() => {
+    // The full page scrolls as a whole: follow new messages only while the
+    // visitor is at the bottom of it.
+    if (page) {
+      if (followPage.current) window.scrollTo({ top: document.documentElement.scrollHeight })
+      return
+    }
     const el = list.current
     if (!el) return
     el.scrollTop = savedScroll.current ?? el.scrollHeight
-  }, [open, profile, messages, mode, handoffShown, confirmEnd, sending])
+  }, [page, open, profile, messages, mode, handoffShown, confirmEnd, sending, messageCard])
+  const followPage = useRef(true)
+  useEffect(() => {
+    if (!page) return
+    const onScroll = () => {
+      const doc = document.documentElement
+      // Some room for the footer below the message box.
+      followPage.current = doc.scrollHeight - (window.scrollY + window.innerHeight) < 160
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [page])
   const onListScroll = () => {
     const el = list.current
     if (!el) return
@@ -336,9 +418,9 @@ export function ChatWidget({
   // On a phone the open chat fills the screen: the page behind it stays put
   // instead of scrolling along (and showing its scrollbar) under the chat.
   useEffect(() => {
-    if (!open || embedded || !window.matchMedia(PHONE_QUERY).matches) return
+    if (!open || fixed || !window.matchMedia(PHONE_QUERY).matches) return
     return lockPageScroll()
-  }, [open, embedded])
+  }, [open, fixed])
 
   // Set while the page is being refreshed or left. The browser closes the
   // websocket then, which looks like a dropped connection; reacting to it
@@ -465,8 +547,14 @@ export function ChatWidget({
       setError(errorMessage(err, 'Couldn’t reach the team. Try again.'))
     }
   }
-  const onHandoffMarker = useRef(askForPerson)
-  onHandoffMarker.current = askForPerson
+  // The AI's reply carries the handoff marker: with "Talk with a person" off it
+  // has said no one is free, so the leave-a-message card opens instead.
+  const personWanted = () => {
+    if (teamCanJoin) void askForPerson()
+    else if (ticketsOpen) setMessageCard((c) => c ?? 'reply')
+  }
+  const onHandoffMarker = useRef(personWanted)
+  onHandoffMarker.current = personWanted
 
   // An answer failed while streaming. The team gets the chat (ModelRiver has
   // already stored the question in the session); an empty reply bubble is
@@ -485,7 +573,11 @@ export function ChatWidget({
     } catch {
       // Fall through to the retry message.
     }
-    updateMessage(messageId, () => ({ error: 'Our assistant couldn’t answer just now. Please try again in a moment.' }))
+    updateMessage(messageId, () => ({
+      error: canRaiseTicket
+        ? 'Our assistant couldn’t answer just now. Please try again in a moment, or raise a ticket from the menu.'
+        : 'Our assistant couldn’t answer just now. Please try again in a moment.',
+    }))
   }
   const onAiFailure = useRef(handOffAfterFailure)
   onAiFailure.current = handOffAfterFailure
@@ -513,6 +605,9 @@ export function ChatWidget({
       try {
         const res = await fetchConversation()
         setKnown(new Map(res.articles.map((a) => [a.slug, a])))
+        setTeamCanJoin(res.teamCanJoin)
+        setTicketsOpen(res.ticketsOpen)
+        setTicketSubjects(res.ticketSubjects)
         if (!res.conversation) {
           if (res.closedFor != null) closedByTeam(res.closedFor)
           forgetConversation()
@@ -562,10 +657,10 @@ export function ChatWidget({
     else if (Date.now() - lastFetchAt.current > 2000) void refresh()
   }, [open, refresh, resume])
   useEffect(() => {
-    if (embedded || !restoredOpen.current) return
+    if (fixed || !restoredOpen.current) return
     if (open) writeCookie(OPEN_COOKIE, true, OPEN_MAX_AGE)
     else deleteCookie(OPEN_COOKIE)
-  }, [open, embedded])
+  }, [open, fixed])
 
   const sendText = async (raw: string) => {
     const text = raw.trim()
@@ -582,6 +677,7 @@ export function ChatWidget({
     setInput('')
     // Sending a message brings the conversation back to the bottom.
     savedScroll.current = null
+    followPage.current = true
     const localId = `local-${Date.now()}`
     setMessages((prev) => [...prev, { id: localId, role: 'user', author: 'user', content: text }])
     setSending(text)
@@ -593,6 +689,8 @@ export function ChatWidget({
         setVerify({ services: res.verify.services, question: text, expired: res.verify.expired })
         if (res.verify.expired) identityApplied.current = false
       }
+      // They asked for a person while no one can join: the AI says so, and the card opens.
+      if (res.offerTicket) setMessageCard((c) => c ?? 'reply')
       if (res.handoff) {
         // The server recognised a request for a person, or the AI couldn't
         // answer, and passed the chat to the team.
@@ -646,6 +744,9 @@ export function ChatWidget({
       setProfile({ name: res.name })
       setMessages([])
       setMode('ai')
+      // What this chat can do (verifying an email, raising a ticket), right away
+      // rather than on the next poll. Runs once the start has finished.
+      void refresh(true)
     } catch (err) {
       setError(errorMessage(err, 'Could not start the chat.'))
     } finally {
@@ -755,17 +856,22 @@ export function ChatWidget({
   // HTML (always closed) matches the first client render.
   const restoredOpen = useRef(false)
   useEffect(() => {
-    if (embedded) return
-    if (readCookie<boolean>(OPEN_COOKIE)) requestOpen({ animate: false, focus: false })
+    // The full page is open already; it only needs to know whether to focus.
+    if (fixed) {
+      if (page && takeFocus()) focusWhenReady.current = true
+      return
+    }
+    if (readCookie<boolean>(OPEN_COOKIE)) requestOpen({ animate: false, focus: takeFocus() })
     restoredOpen.current = true
-  }, [embedded, requestOpen])
+  }, [fixed, page, requestOpen])
 
   // Focus the name field (new chat) or the message box once it is on screen.
   useEffect(() => {
     if (!open || !focusWhenReady.current || profile === undefined) return
     focusWhenReady.current = false
-    if (profile === null) nameRef.current?.focus()
-    else inputRef.current?.focus()
+    // Without scrolling: the full page stays where it was (at its latest message).
+    if (profile === null) nameRef.current?.focus({ preventScroll: true })
+    else inputRef.current?.focus({ preventScroll: true })
   }, [open, profile])
 
   // The panel plays a short exit transition, then unmounts. Visitors who ask
@@ -776,6 +882,36 @@ export function ChatWidget({
     setClosing(true)
     clearTimeout(closeTimer.current)
     closeTimer.current = setTimeout(finishClose, 200)
+  }
+
+  // The floating panel becomes the full-page chat at /chat, and back. The
+  // conversation lives in a cookie, so it carries on; an answer still being
+  // written is picked up there (see resume). Leaving marks the socket as going
+  // away on purpose, so its closing isn't taken for a failure.
+  const expand = () => {
+    try {
+      sessionStorage.setItem(FROM_KEY, window.location.pathname + window.location.search)
+    } catch {
+      // Private mode: collapsing goes to the home page instead.
+    }
+    leaving.current = true
+    deleteCookie(OPEN_COOKIE)
+    markFocus()
+    void navigate({ to: CHAT_PAGE })
+  }
+  const collapse = () => {
+    let from = '/'
+    try {
+      const saved = sessionStorage.getItem(FROM_KEY)
+      if (saved && saved.startsWith('/') && !saved.startsWith('//') && !saved.startsWith(CHAT_PAGE)) from = saved
+    } catch {
+      // Not readable: the home page.
+    }
+    leaving.current = true
+    // The floating panel opens on the page it goes back to.
+    writeCookie(OPEN_COOKIE, true, OPEN_MAX_AGE)
+    markFocus()
+    void navigate({ href: from })
   }
 
   // Other parts of the page (the hero composer, "Ask a question" buttons)
@@ -835,6 +971,8 @@ export function ChatWidget({
     // Only while nobody has replied yet: once a team member is in the chat,
     // it stays with them until they hand it back.
     menuItems.push({ label: 'Switch to AI assistant', icon: <HelpBot size={16} animated={false} />, onSelect: () => void backToAi() })
+  } else if (mode === 'ai' && canRaiseTicket) {
+    menuItems.push({ label: 'Raise a ticket', icon: <TicketIcon size={15} />, onSelect: () => setMessageCard('menu') })
   } else if (mode === 'ai' && messages.length > 0) {
     // The team works from the conversation's history, so there has to be a message first.
     menuItems.push({ label: 'Talk to a person', icon: <HeadsetIcon size={15} />, onSelect: () => void askForPerson() })
@@ -848,20 +986,31 @@ export function ChatWidget({
     <section
       aria-label="Support chat"
       // The one place motion is allowed (see styles.css): open/close transition.
-      data-motion={embedded ? undefined : ''}
+      data-motion={fixed ? undefined : ''}
       onAnimationEnd={(e) => {
         if (e.target === e.currentTarget && closing) finishClose()
       }}
       className={cn(
-        'flex flex-col overflow-hidden bg-card',
-        !embedded && (closing ? 'chat-leave' : entrance && 'chat-enter'),
+        // Not on the full page: clipping would stop its header and message box from sticking.
+        'flex flex-col',
+        !page && 'overflow-hidden bg-card',
+        !fixed && (closing ? 'chat-leave' : entrance && 'chat-enter'),
         embedded
           ? 'h-dvh w-full'
+          : page
+            ? // On the page itself, centred, at least a screen tall so the message box starts at the bottom.
+              'mx-auto min-h-[calc(100dvh-3.5rem-1px)] w-full max-w-3xl'
           : // Full screen on a phone; a floating panel from `sm` up.
             'fixed right-5 bottom-5 z-50 h-[min(640px,calc(100dvh-2.5rem))] w-[min(400px,calc(100vw-2.5rem))] rounded-2xl border border-border max-sm:inset-0 max-sm:h-dvh max-sm:w-full max-sm:rounded-none max-sm:border-0',
       )}
     >
-      <header className="flex items-center gap-3 border-b border-border px-4 py-3">
+      <header
+        className={cn(
+          'flex items-center gap-3 border-b border-border px-4 py-3',
+          // Stays under the help center's header while the page scrolls.
+          page && 'sticky top-[calc(3.5rem+1px)] z-30 bg-background/85 backdrop-blur',
+        )}
+      >
         {/* Always the bot, never the logo: its mood shows what the assistant is doing, and a wide logo would crowd the name. */}
         <HelpBot mood={botMood} size={32} label={`Help bot, ${botMood}`} />
         <div className="min-w-0 flex-1">
@@ -871,10 +1020,21 @@ export function ChatWidget({
             {status.text}
           </p>
         </div>
+        {!embedded && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={page ? collapse : expand}
+            aria-label={page ? 'Back to the small chat window' : 'Open the chat full page'}
+            title={page ? 'Back to the small window' : 'Full page'}
+          >
+            {page ? <CollapseIcon size={15} /> : <ExpandIcon size={15} />}
+          </Button>
+        )}
         {profile && !ended && (
           <ActionsMenu label="Conversation options" items={menuItems} />
         )}
-        {!embedded && (
+        {!fixed && (
           <Button variant="ghost" size="icon-sm" onClick={closeChatPanel} aria-label="Close chat">
             <XIcon />
           </Button>
@@ -882,9 +1042,7 @@ export function ChatWidget({
       </header>
 
       {profile === undefined ? (
-        <div className="grid flex-1 place-items-center text-muted-foreground">
-          <BusyIcon busy size={18} />
-        </div>
+        <ChatSkeleton />
       ) : ended !== null ? (
         <EndedScreen
           name={ended.name}
@@ -912,14 +1070,17 @@ export function ChatWidget({
           <p className="sr-only" aria-live="polite">
             {lastReply ? `${lastReply.author === 'agent' ? lastReply.authorName || 'Team' : 'Assistant'}: ${lastReply.content}` : ''}
           </p>
-          <div ref={list} onScroll={onListScroll} className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5">
+          <div ref={list} onScroll={onListScroll} className={cn('flex-1 space-y-5 px-4 py-5', !page && 'overflow-y-auto overscroll-contain')}>
             {messages.length === 0 && (
               <div className="flex h-full flex-col justify-end pb-2">
                 <HelpBot body="figure" mood={input.trim() ? 'listening' : 'idle'} size={84} className="-ml-2 mb-3" />
                 <p className="font-serif text-xl leading-snug">Hi {profile.name}, what can we help with?</p>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Answers come from our help articles and link to them. If you need a person, say so and our team can join
-                  this chat.
+                  {teamCanJoin
+                    ? 'Answers come from our help articles and link to them. If you need a person, say so and our team can join this chat.'
+                    : canRaiseTicket
+                      ? 'Answers come from our help articles and link to them. If you need our team, you can raise a ticket.'
+                      : 'Answers come from our help articles and link to them.'}
                 </p>
               </div>
             )}
@@ -930,6 +1091,8 @@ export function ChatWidget({
             {sending !== null && mode === 'ai' && <ChatMessage message={PENDING_REPLY} known={known} />}
           </div>
 
+          {/* The cards and the message box: they stay at the bottom of the screen on the full page. */}
+          <div className={page ? 'sticky bottom-0 z-10 bg-background pt-2 pb-3' : 'contents'}>
           {error && (
             <p role="alert" className="mx-4 mb-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
@@ -938,7 +1101,21 @@ export function ChatWidget({
 
           {!confirmEnd && waiting && <WaitingCard since={waitingSince} reason={handoffReason ?? 'asked'} onBackToAi={() => void backToAi()} />}
 
-          {!confirmEnd && !waiting && verify && !account.verifiedEmail && (
+          {!confirmEnd && !waiting && messageCard && canRaiseTicket && (
+            <RaiseTicketCard
+              // Not when an answer opened it: on a phone the keyboard would cover the answer.
+              focus={messageCard === 'menu'}
+              verifiedEmail={account.verifiedEmail}
+              emailCodes={account.emailCodes}
+              subjects={ticketSubjects}
+              onVerified={(email) => setAccount((prev) => ({ ...prev, verifiedEmail: email, verificationExpired: false }))}
+              sent={messageSent}
+              onSent={() => setMessageSent(true)}
+              onDismiss={() => setMessageCard(null)}
+            />
+          )}
+
+          {!confirmEnd && !waiting && !messageCard && verify && !account.verifiedEmail && (
             <VerifyCard services={verify.services} expired={verify.expired} onVerified={verified} onDismiss={() => setVerify(null)} />
           )}
 
@@ -989,14 +1166,53 @@ export function ChatWidget({
             </div>
           </form>
           )}
+          </div>
         </>
       )}
-      <footer className="pb-2.5 text-center text-[11px] text-muted-foreground">
-        <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">
-          Powered by Desk
-        </a>
-      </footer>
+      {/* The full page has the help center's footer, which says it already. */}
+      {!page && (
+        <footer className="pb-2.5 text-center text-[11px] text-muted-foreground">
+          <a href={repoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">
+            Powered by Desk
+          </a>
+        </footer>
+      )}
     </section>
+  )
+}
+
+// While the conversation loads: the shape of a chat (a question, an answer,
+// another question) and the message box, pulsing gently, so the panel or the
+// page opens at its size instead of with a spinner that's swapped out.
+// data-motion opts it out of the no-motion rule; reduced motion keeps it still.
+// The bars are the text colour, faint, so they show on a white panel as well
+// as a dark one (the muted shade nearly vanishes on white).
+function ChatSkeleton() {
+  return (
+    <div data-motion="" aria-busy="true" aria-label="Loading the conversation" className="flex flex-1 animate-pulse flex-col">
+      <div className="flex flex-1 flex-col justify-end gap-5 px-4 py-5">
+        <span className="ml-auto h-9 w-2/5 rounded-2xl rounded-br-md bg-foreground/10" />
+        <SkeletonReply lines={['92%', '84%', '58%']} />
+        <span className="ml-auto h-9 w-1/3 rounded-2xl rounded-br-md bg-foreground/10" />
+        <SkeletonReply lines={['88%', '46%']} />
+      </div>
+      <div className="px-3 pb-2">
+        <span className="block h-11 rounded-xl border border-border" />
+      </div>
+    </div>
+  )
+}
+
+function SkeletonReply({ lines }: { lines: string[] }) {
+  return (
+    <div className="flex gap-3">
+      <span className="size-[26px] shrink-0 rounded-full bg-foreground/10" />
+      <div className="grid flex-1 gap-2.5 pt-1.5">
+        {lines.map((width, i) => (
+          <span key={i} className="h-3 rounded bg-foreground/10" style={{ width }} />
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -1036,18 +1252,42 @@ function VerifyCard({
     }
   }
 
+  // Verified: the tick shows for a moment, then the chat carries on (and asks
+  // the question again, now that the assistant can see their account).
+  const [verifiedAs, setVerifiedAs] = useState<string | null>(null)
+  // A ref, so the chat re-rendering (polls, live updates) doesn't restart the wait.
+  const onVerifiedRef = useRef(onVerified)
+  onVerifiedRef.current = onVerified
+  useEffect(() => {
+    if (!verifiedAs) return
+    const timer = setTimeout(() => onVerifiedRef.current(verifiedAs), 900)
+    return () => clearTimeout(timer)
+  }, [verifiedAs])
+
   const check = async (code: string) => {
     setBusy(true)
     setError(null)
     try {
       const res = await confirm({ data: { code } })
-      onVerified(res.verifiedEmail)
+      setVerifiedAs(res.verifiedEmail)
     } catch (err) {
       setError(errorMessage(err, 'Couldn’t check the code.'))
       setAttempt((a) => a + 1)
     } finally {
       setBusy(false)
     }
+  }
+
+  if (verifiedAs) {
+    return (
+      <div role="region" aria-label="Email verified" className="mx-3 mb-2 rounded-xl border border-border bg-background px-4 pt-5 pb-4 text-center">
+        <SuccessTick size={44} className="mx-auto" />
+        <p className="mt-3 text-sm font-medium" role="status">
+          Email verified
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">Verified as {verifiedAs}.</p>
+      </div>
+    )
   }
 
   return (
@@ -1112,6 +1352,231 @@ function VerifyCard({
         <p role="alert" className="mt-2 text-sm text-destructive">
           {error}
         </p>
+      )}
+    </div>
+  )
+}
+
+// Raising a ticket while "Talk with a person" is off. The team answers by
+// email, so the visitor proves the address first: a 6-digit code sent to it,
+// the same check as for account lookups (a typed address could be anyone's).
+// Already verified in this chat: it's raised straight away. Without email set
+// up on the server there's nothing to verify with: it's raised without one.
+// The "Something else" subject: the ticket takes its subject from the message.
+const OTHER_SUBJECT = '__other__'
+
+function RaiseTicketCard({
+  focus,
+  verifiedEmail,
+  emailCodes,
+  subjects,
+  onVerified,
+  sent,
+  onSent,
+  onDismiss,
+}: {
+  focus: boolean
+  // Masked, when the visitor verified it in this chat.
+  verifiedEmail: string | null
+  emailCodes: boolean
+  subjects: string[]
+  onVerified: (maskedEmail: string) => void
+  sent: boolean
+  onSent: () => void
+  onDismiss: () => void
+}) {
+  const post = useServerFn(raiseTicket)
+  const requestCode = useServerFn(requestEmailCode)
+  const confirmCode = useServerFn(confirmEmailCode)
+  const [text, setText] = useState('')
+  const [subject, setSubject] = useState('')
+  const [email, setEmail] = useState('')
+  // The masked address a code was sent to: the code step is showing.
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null)
+  // A new key clears the code boxes after a wrong code.
+  const [attempt, setAttempt] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [replyTo, setReplyTo] = useState<string | null>(null)
+  // Its reference, to quote if they write in again.
+  const [ticket, setTicket] = useState<string | null>(null)
+  const needsEmail = emailCodes && !verifiedEmail
+  const ready = text.trim() !== '' && (!needsEmail || email.trim() !== '') && (subjects.length === 0 || subject !== '')
+
+  const raise = async (to: string | null) => {
+    const res = await post({ data: { text, subject: subject && subject !== OTHER_SUBJECT ? subject : null } })
+    setTicket(res.ticketRef)
+    setReplyTo(to)
+    setText('')
+    onSent()
+  }
+
+  const run = async (fn: () => Promise<void>, fallback: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+    } catch (err) {
+      setError(errorMessage(err, fallback))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Step 1: raised at once when the email is known; else a code goes to it.
+  const submit = () =>
+    run(async () => {
+      if (!needsEmail) return raise(verifiedEmail)
+      const res = await requestCode({ data: { email } })
+      setCodeSentTo(res.sentTo)
+    }, 'Couldn’t raise the ticket. Please try again.')
+
+  // Step 2: the code proves the address, then the ticket is raised with it.
+  const check = (code: string) =>
+    run(async () => {
+      let masked: string
+      try {
+        masked = (await confirmCode({ data: { code } })).verifiedEmail
+      } catch (err) {
+        setAttempt((a) => a + 1)
+        throw err
+      }
+      onVerified(masked)
+      // The code boxes stay (with "Confirming…") until the ticket is raised,
+      // so nothing flickers. If raising fails, the form is back with the error.
+      try {
+        await raise(masked)
+      } catch (err) {
+        setCodeSentTo(null)
+        throw err
+      }
+    }, 'Couldn’t check the code.')
+
+  // Raised: a tick drawing itself in, then where the reply will go.
+  if (sent) {
+    return (
+      <div role="region" aria-label="Ticket raised" className="relative mx-3 mb-2 rounded-xl border border-border bg-background px-4 pt-5 pb-4 text-center">
+        <Button variant="ghost" size="icon-sm" className="absolute top-2 right-2" onClick={onDismiss} aria-label="Close">
+          <XIcon size={15} />
+        </Button>
+        <SuccessTick size={44} className="mx-auto" />
+        <p className="mt-3 text-sm font-medium" role="status">
+          {ticket ? `Ticket #${ticket} raised` : 'Ticket raised'}
+        </p>
+        <p className="mx-auto mt-1 max-w-72 text-sm text-muted-foreground">
+          {replyTo
+            ? `Our team will reply to ${replyTo} by email.${ticket ? ` Mention #${ticket} if you write to us again.` : ''}`
+            : 'Our team will read it and reply here if you’re still in the chat.'}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div role="region" aria-label="Raise a ticket" className="mx-3 mb-2 rounded-xl border border-border bg-background p-3.5">
+      <div className="flex items-start gap-2">
+        <TicketIcon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{codeSentTo ? 'Confirm your email' : 'Raise a ticket'}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground" aria-live="polite">
+            {codeSentTo
+                ? `Enter the 6-digit code we sent to ${codeSentTo}. Your ticket is raised once it’s confirmed.`
+                : emailCodes
+                  ? 'No one is available to chat right now. Raise a ticket and our team will reply by email.'
+                  : 'No one is available to chat right now. Raise a ticket and our team will read it.'}
+          </p>
+        </div>
+        <Button variant="ghost" size="icon-sm" className="-mt-1 -mr-1" onClick={onDismiss} aria-label="Not now">
+          <XIcon size={15} />
+        </Button>
+      </div>
+      {codeSentTo && (
+        <div className="mt-3 grid gap-2">
+          <OtpInput key={attempt} label="Verification code" autoFocus disabled={busy} invalid={!!error} onComplete={(code) => void check(code)} />
+          {error && (
+            <p role="alert" className="text-center text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          {busy ? (
+            <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground" aria-live="polite">
+              <BusyIcon busy size={12} />
+              Confirming…
+            </p>
+          ) : (
+            <button
+              type="button"
+              className="justify-self-center text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              onClick={() => {
+                setCodeSentTo(null)
+                setError(null)
+              }}
+            >
+              Use a different email or send a new code
+            </button>
+          )}
+        </div>
+      )}
+      {!codeSentTo && (
+        <form
+          className="mt-3 grid gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (ready) void submit()
+          }}
+        >
+          {subjects.length > 0 && (
+            <Select value={subject} onChange={(e) => setSubject(e.target.value)} required aria-label="What it’s about" autoFocus={focus}>
+              <option value="" disabled>
+                What’s it about?
+              </option>
+              {subjects.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+              <option value={OTHER_SUBJECT}>Something else</option>
+            </Select>
+          )}
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={3}
+            maxLength={2000}
+            required
+            autoFocus={focus && subjects.length === 0}
+            placeholder="What do you need help with?"
+            aria-label="What you need help with"
+            className="resize-none"
+          />
+          {verifiedEmail ? (
+            <p className="text-xs text-muted-foreground">We’ll reply to {verifiedEmail}, the email you verified.</p>
+          ) : (
+            needsEmail && (
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                placeholder="Your email, for our reply"
+                aria-label="Your email"
+                maxLength={254}
+                required
+                className="h-8"
+              />
+            )
+          )}
+          {needsEmail && <p className="text-xs text-muted-foreground">We’ll send a code to confirm it’s yours.</p>}
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <Button type="submit" size="sm" className="justify-self-end" disabled={busy || !ready}>
+            <BusyIcon busy={busy} size={14} />
+            {needsEmail ? 'Send code' : 'Raise ticket'}
+          </Button>
+        </form>
       )}
     </div>
   )

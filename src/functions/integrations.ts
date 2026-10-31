@@ -6,11 +6,10 @@ import { getDb } from '../server/db.server.ts'
 import { env } from '../server/env.server.ts'
 import { identityMethods, VERIFIED_IDLE_MS } from '../server/identity.server.ts'
 import { auditLog, CONNECTORS, connectorName, connectorView, recentEvents, saveConnector, testConnector } from '../server/integrations.server.ts'
+import { CONNECTOR_IDS } from '../lib/connector-ids.ts'
 
 // Admins only: connectors (Shopify, Stripe, Cal.com, Custom HTTP). Keys go in
 // and never come back out; this page only ever learns whether one is set.
-
-const IDS = CONNECTORS.map((c) => c.id)
 
 function integrations() {
   const db = getDb()
@@ -61,7 +60,7 @@ export const saveIntegration = createServerFn({ method: 'POST' })
     if (!Array.isArray(clear) || !clear.every((c) => typeof c === 'string')) throw new Error('clear is invalid.')
     if (typeof o.enabled !== 'boolean') throw new Error('enabled is required.')
     return {
-      id: oneOf(o, 'id', IDS),
+      id: oneOf(o, 'id', CONNECTOR_IDS),
       enabled: o.enabled,
       values: stringMap(o.values, 2000),
       clear: clear as string[],
@@ -80,7 +79,7 @@ export const saveIntegration = createServerFn({ method: 'POST' })
 // Calls the service with the saved settings, read-only, and reports what
 // it found (including keys that could change things, which are refused).
 export const testIntegration = createServerFn({ method: 'POST' })
-  .validator((input: unknown) => ({ id: oneOf(asObject(input), 'id', IDS) }))
+  .validator((input: unknown) => ({ id: oneOf(asObject(input), 'id', CONNECTOR_IDS) }))
   .handler(async ({ data }) => {
     const me = requireUser('admin')
     if (!allowAll([{ key: `integrations-test:${me.id}:${data.id}`, max: 5, windowMs: 10 * 60_000 }])) {

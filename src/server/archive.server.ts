@@ -3,6 +3,9 @@ import { getDb, now } from './db.server.ts'
 import { env } from './env.server.ts'
 import * as mr from './modelriver.server.ts'
 import { pruneInsights } from './insights.server.ts'
+import { draftSessions, forgetDraftSession, pruneTickets } from './tickets.server.ts'
+import { pruneTicketAccess } from './ticket-access.server.ts'
+import { drainOutbox } from './outbox.server.ts'
 
 // Archiving closes a conversation and hides it from the main list. After
 // ARCHIVE_RETENTION_HOURS it is deleted for good: the ModelRiver session
@@ -99,6 +102,7 @@ export async function cleanupArchived({
 export function pruneExpired(db: DatabaseSync = getDb()): number {
   const ts = now()
   return (
+    pruneTicketAccess(db) +
     Number(db.prepare('DELETE FROM auth_sessions WHERE expires_at <= ?').run(ts).changes) +
     Number(db.prepare('DELETE FROM login_challenges WHERE expires_at <= ?').run(ts).changes) +
     Number(
@@ -109,10 +113,27 @@ export function pruneExpired(db: DatabaseSync = getDb()): number {
   )
 }
 
+// Sessions AI drafts started that couldn't be deleted at once (see
+// draftTicketReply): tried again; one already gone counts as deleted.
+export async function cleanupDraftSessions(deleteSession = mr.deleteSession, db: DatabaseSync = getDb()): Promise<number> {
+  let done = 0
+  for (const id of draftSessions(db)) {
+    try {
+      await deleteSession(id)
+    } catch (err) {
+      if (!(err instanceof mr.ModelRiverError && err.status === 404)) continue
+    }
+    forgetDraftSession(id, db)
+    done++
+  }
+  return done
+}
+
 // Runs the hourly cleanup in the production server (server.mjs): archived
 // conversations past their retention, unanswered questions older than 90 days,
-// and expired sign-ins and codes. The timers are unref'd so they never keep the
-// process alive on their own.
+// tickets solved more than 90 days ago, expired sign-ins and codes, and
+// emails waiting to be tried again. The timers
+// are unref'd so they never keep the process alive on their own.
 export function scheduleCleanup(): void {
   const run = () => {
     try {
@@ -122,6 +143,12 @@ export function scheduleCleanup(): void {
       console.error('[insights] cleanup failed', err)
     }
     try {
+      const pruned = pruneTickets()
+      if (pruned > 0) console.log(`[tickets] deleted ${pruned} ticket${pruned === 1 ? '' : 's'} solved more than 90 days ago`)
+    } catch (err) {
+      console.error('[tickets] cleanup failed', err)
+    }
+    try {
       pruneExpired()
     } catch (err) {
       console.error('[cleanup] removing expired sign-ins failed', err)
@@ -129,6 +156,9 @@ export function scheduleCleanup(): void {
     cleanupArchived()
       .then((n) => n > 0 && console.log(`[archive] deleted ${n} archived conversation${n === 1 ? '' : 's'}`))
       .catch((err) => console.error('[archive] cleanup failed', err))
+    cleanupDraftSessions().catch((err) => console.error('[tickets] removing draft sessions failed', err))
+    // Emails queued before a restart (each run also sets a timer for the next one due).
+    drainOutbox().catch((err) => console.error('[email] retrying queued emails failed', err))
   }
   setTimeout(run, 60_000).unref()
   setInterval(run, HOUR).unref()

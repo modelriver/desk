@@ -6,25 +6,46 @@ import * as mr from '../server/modelriver.server.ts'
 import { listArticles } from '../server/content.server.ts'
 import { archivedSessions, archiveSession, deleteAt, restoreSession } from '../server/archive.server.ts'
 import { env } from '../server/env.server.ts'
-import { conversationChanged, getOwnSession, localBySession, plainPreview, requireLocal, setLocalMode } from '../server/dashboard-data.server.ts'
+import { conversationChanged, getOwnSession, localBySession, plainPreview, requireLocal, setLocalMode, waitingSessions } from '../server/dashboard-data.server.ts'
+import { PAGE_SIZE, pageNumber, pageOf } from '../lib/paging.ts'
 import { connectorById, connectorName, conversationEvents, maskEmail } from '../server/integrations.server.ts'
 import { verificationStatus, type VerificationRow } from '../server/identity.server.ts'
+import { draftSessions, openTicketCount } from '../server/tickets.server.ts'
 
 // Team-side views. Conversation history is read from ModelRiver sessions; the
 // only local data is which conversation a session belongs to and its mode.
 // The helpers live in dashboard-data.server.ts so none of them can end up in
 // the browser bundle.
 
-// view "open": everything not archived. view "archived": the archive, most recently archived first.
+// One page of the inbox. view "open": everything not archived, with anyone
+// waiting for a person first (longest wait at the top), then newest first.
+// view "archived": the archive, most recently archived first. The list comes
+// from a shared copy of ModelRiver's (see recentSessions); local details are
+// only looked up for the rows on this page.
 export const listConversations = createServerFn({ method: 'GET' })
-  .validator((input: unknown) => ({ view: oneOf(asObject(input ?? {}), 'view', ['open', 'archived'] as const) }))
-  .handler(async ({ data: { view } }) => {
+  .validator((input: unknown) => {
+    const o = asObject(input ?? {})
+    return { view: oneOf(o, 'view', ['open', 'archived'] as const), page: pageNumber(o.page) }
+  })
+  .handler(async ({ data: { view, page } }) => {
     const me = requireUser()
-    const all = await mr.listRecentSessions()
+    const { sessions: all, capped } = await mr.recentSessions()
     const archived = archivedSessions()
-    const sessions = all.filter((s) => archived.has(s.id) === (view === 'archived'))
-    const local = localBySession(sessions.map((s) => s.id))
-    const rows = sessions.map((s) => ({
+    // Sessions AI drafts started for tickets aren't conversations.
+    const drafts = draftSessions()
+    const sessions = all.filter((s) => !drafts.has(s.id) && archived.has(s.id) === (view === 'archived'))
+    const waiting = view === 'open' ? waitingSessions() : new Map<string, string>()
+    const ordered =
+      view === 'archived'
+        ? sessions.sort((a, b) => archived.get(b.id)!.localeCompare(archived.get(a.id)!))
+        : [
+            ...sessions.filter((s) => waiting.has(s.id)).sort((a, b) => waiting.get(a.id)!.localeCompare(waiting.get(b.id)!)),
+            ...sessions.filter((s) => !waiting.has(s.id)),
+          ]
+    const paging = pageOf(ordered.length, page)
+    const slice = ordered.slice(paging.offset, paging.offset + PAGE_SIZE)
+    const local = localBySession(slice.map((s) => s.id))
+    const rows = slice.map((s) => ({
       sessionId: s.id,
       conversationId: local.get(s.id)?.id ?? null,
       mode: local.get(s.id)?.mode ?? null,
@@ -40,14 +61,16 @@ export const listConversations = createServerFn({ method: 'GET' })
       archivedAt: archived.get(s.id) ?? null,
       deleteAt: archived.has(s.id) ? deleteAt(archived.get(s.id)!) : null,
     }))
-    const result = { conversations: rows, retentionHours: env.archiveRetentionHours, currentUserId: me.id }
-    if (view === 'archived') {
-      rows.sort((a, b) => b.archivedAt!.localeCompare(a.archivedAt!))
-      return result
+    return {
+      conversations: rows,
+      ...paging,
+      // How many of the listed conversations are waiting, on any page.
+      waitingCount: sessions.filter((s) => waiting.has(s.id)).length,
+      // Only the newest sessions are read; older ones aren't listed.
+      capped,
+      retentionHours: env.archiveRetentionHours,
+      currentUserId: me.id,
     }
-    // People waiting for the team come first, longest wait at the top; the rest keep ModelRiver's newest-first order.
-    const waiting = rows.filter((r) => r.waitingSince).sort((a, b) => a.waitingSince!.localeCompare(b.waitingSince!))
-    return { ...result, conversations: [...waiting, ...rows.filter((r) => !r.waitingSince)] }
   })
 
 // Closes the conversation (a visitor still in it sees that the team closed
@@ -72,13 +95,13 @@ export const restoreConversation = createServerFn({ method: 'POST' })
     return { restored: true }
   })
 
-// For the sidebar badge: how many visitors are waiting for a person.
+// For the sidebar badges: how many visitors are waiting for a person, and how many tickets are open.
 export const waitingCount = createServerFn({ method: 'GET' }).handler(() => {
   requireUser()
   const row = getDb()
     .prepare('SELECT count(*) AS n FROM conversations WHERE handoff_requested_at IS NOT NULL AND ended_at IS NULL')
     .get() as { n: number }
-  return { waiting: row.n }
+  return { waiting: row.n, tickets: openTicketCount() }
 })
 
 export const getTranscript = createServerFn({ method: 'POST' })

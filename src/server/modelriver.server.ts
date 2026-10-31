@@ -15,7 +15,7 @@ export class ModelRiverError extends Error {
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, timeoutMs = 20_000): Promise<T> {
   const res = await fetch(`${env.modelriverApiUrl}${path}`, {
     method,
     headers: {
@@ -23,7 +23,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   const text = await res.text()
   let json: any = null
@@ -66,6 +66,19 @@ export function startAsyncRequest(input: {
     messages: input.messages,
     metadata: input.metadata,
   })
+}
+
+// One answer, waited for (POST /v1/ai): for AI drafts in the dashboard, not
+// the visitor's chat. The workflow keeps session memory, so it starts a
+// session; its id comes back so the caller can delete it.
+export async function requestOnce(input: { messages: ChatMessage[]; metadata?: Record<string, string> }): Promise<{ data: unknown; sessionId: string | null }> {
+  const res = await call<{ data: unknown; meta?: { session_id?: string | null } }>(
+    'POST',
+    '/ai',
+    { workflow: env.workflow, messages: input.messages, metadata: input.metadata },
+    90_000,
+  )
+  return { data: res.data, sessionId: res.meta?.session_id ?? null }
 }
 
 export function reconnectChannel(channelId: string): Promise<AsyncAccepted> {
@@ -120,6 +133,41 @@ export async function listRecentSessions(): Promise<SessionSummary[]> {
   return sessions
 }
 
+// The inbox reads this list often (every open dashboard, every 10 seconds), and
+// a long history takes several requests. So one copy is shared for a few
+// seconds, and an older one is served at once while a fresh copy loads in the
+// background: the page never waits on ModelRiver except on the very first load.
+// Every list is the newest MAX_SESSIONS, so `capped` says whether there may be older ones.
+const SESSIONS_FRESH_MS = 5_000
+const SESSIONS_STALE_MS = 5 * 60_000
+let sessionList: { value: SessionSummary[]; at: number } | null = null
+let sessionListLoad: Promise<SessionSummary[]> | null = null
+
+export async function recentSessions(now = Date.now()): Promise<{ sessions: SessionSummary[]; capped: boolean }> {
+  const age = sessionList ? now - sessionList.at : Infinity
+  if (age >= SESSIONS_FRESH_MS) {
+    sessionListLoad ??= listRecentSessions()
+      .then((value) => {
+        sessionList = { value, at: Date.now() }
+        return value
+      })
+      .finally(() => {
+        sessionListLoad = null
+      })
+    // Too old to show (or none yet): wait for the fresh copy.
+    if (age >= SESSIONS_STALE_MS) await sessionListLoad
+    else sessionListLoad.catch((err) => console.error('[sessions] refreshing the list failed', err))
+  }
+  const sessions = sessionList!.value
+  return { sessions, capped: sessions.length >= MAX_SESSIONS }
+}
+
+// A session was added or deleted: the next read refreshes the list (still
+// serving this copy meanwhile, so nothing waits).
+export function sessionsChanged() {
+  if (sessionList) sessionList.at = Math.min(sessionList.at, Date.now() - SESSIONS_FRESH_MS)
+}
+
 // The project's usage for a UTC calendar month (GET /v1/usage).
 // billable_requests counts AI answers; team replies added to a session don't count.
 export interface MonthUsage {
@@ -159,6 +207,7 @@ export function getSessionCached(sessionId: string): Promise<SessionDetail> {
 export async function deleteSession(sessionId: string): Promise<void> {
   await call('DELETE', `/sessions/${encodeURIComponent(sessionId)}`)
   sessionCache.delete(sessionId)
+  sessionsChanged()
 }
 
 // Stores a turn in the session without calling a model: user messages while a

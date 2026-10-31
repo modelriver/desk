@@ -81,7 +81,7 @@ export const Route = createFileRoute('/dashboard/editor')({
       <PageHeader
         title="Editor"
         actions={
-          <Link to="/dashboard/data" className={buttonClass('outline', 'sm')}>
+          <Link to="/dashboard/knowledge" className={buttonClass('outline', 'sm')}>
             Back to Knowledge
           </Link>
         }
@@ -402,7 +402,7 @@ function ArticleEditor({ article, onCreated, onReload }: { article: Article; onC
   return (
     <>
       <div className="sticky top-0 z-30 -mx-4 -mt-6 mb-8 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background/90 px-4 py-2.5 backdrop-blur sm:-mx-8 sm:-mt-8 sm:px-8">
-        <Link to="/dashboard/data" className={buttonClass('ghost', 'icon-sm', '-ml-2')} aria-label="Back to Knowledge">
+        <Link to="/dashboard/knowledge" className={buttonClass('ghost', 'icon-sm', '-ml-2')} aria-label="Back to Knowledge">
           <ArrowLeftIcon />
         </Link>
         <nav aria-label="Location" className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">

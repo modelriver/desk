@@ -7,10 +7,15 @@ import { ArchiveIcon } from '../../components/icons.tsx'
 import { Button, EmptyState, Notice, PageHeader } from '../../components/ui.tsx'
 import { ConversationList, retentionLabel } from '../../components/ConversationList.tsx'
 import { errorMessage } from '../../lib/errors.ts'
+import { Pagination } from '../../components/Pagination.tsx'
+import { pageNumber } from '../../lib/paging.ts'
 
 export const Route = createFileRoute('/dashboard/archived')({
   head: () => ({ meta: [{ title: 'Archived · Dashboard' }] }),
-  loader: () => listConversations({ data: { view: 'archived' } }),
+  // ?page=2 for the next 25.
+  validateSearch: (search: Record<string, unknown>): { page?: number } => (pageNumber(search.page) > 1 ? { page: pageNumber(search.page) } : {}),
+  loaderDeps: ({ search }) => ({ page: search.page ?? 1 }),
+  loader: ({ deps }) => listConversations({ data: { view: 'archived', page: deps.page } }),
   errorComponent: ({ error }) => (
     <>
       <PageHeader title="Archived" />
@@ -21,11 +26,21 @@ export const Route = createFileRoute('/dashboard/archived')({
 })
 
 function Archived() {
-  const { conversations, retentionHours, currentUserId } = Route.useLoaderData()
+  const data = Route.useLoaderData()
+  const { conversations, retentionHours, currentUserId } = data
   const router = useRouter()
   const restore = useServerFn(restoreConversation)
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Restored from here: off this list at once, and back if the server refuses.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
+  const shown = conversations.filter((c) => !hidden.has(c.sessionId))
+  const hide = (id: string, on: boolean) =>
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
 
   // Keeps "Deleted in …" honest and drops rows the cleanup removed.
   useEffect(() => {
@@ -48,29 +63,27 @@ function Archived() {
           <Notice tone="error">{error}</Notice>
         </div>
       )}
-      {conversations.length === 0 ? (
+      {shown.length === 0 ? (
         <EmptyState icon={<ArchiveIcon />} title="Nothing archived">
           Close a conversation with the × on its row in Conversations to move it here.
         </EmptyState>
       ) : (
         <ConversationList
-          conversations={conversations}
+          conversations={shown}
           currentUserId={currentUserId}
           action={(c) => (
             <Button
               variant="ghost"
               size="sm"
-              disabled={busy}
               onClick={async () => {
-                setBusy(true)
                 setError(null)
+                hide(c.sessionId, true)
                 try {
                   await restore({ data: { sessionId: c.sessionId } })
-                  await router.invalidate()
+                  void router.invalidate()
                 } catch (err) {
+                  hide(c.sessionId, false)
                   setError(errorMessage(err, 'Couldn’t restore it. Try again.'))
-                } finally {
-                  setBusy(false)
                 }
               }}
             >
@@ -79,6 +92,7 @@ function Archived() {
           )}
         />
       )}
+      <Pagination {...data} noun="conversations" link={(n) => ({ to: '/dashboard/archived', search: n > 1 ? { page: n } : {} })} />
     </>
   )
 }

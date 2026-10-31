@@ -46,20 +46,29 @@ test('database migrates and enforces roles and modes', () => {
       'article_feedback',
       'articles',
       'auth_sessions',
+      'blocked_customers',
       'connector_events',
       'connector_secrets',
       'connector_settings',
       'conversations',
+      'customer_codes',
+      'customer_sessions',
+      'draft_sessions',
+      'email_outbox',
       'knowledge_gaps',
       'login_challenges',
       'recovery_codes',
+      'ticket_events',
+      'ticket_links',
+      'ticket_subjects',
+      'tickets',
       'usage_snapshots',
       'user_avatars',
       'users',
       'visitor_codes',
     ],
   )
-  assert.deepEqual({ ...(db.prepare('PRAGMA user_version').get() as object) }, { user_version: 19 })
+  assert.deepEqual({ ...(db.prepare('PRAGMA user_version').get() as object) }, { user_version: 27 })
   assert.throws(() =>
     db
       .prepare("INSERT INTO conversations (id, visitor_token_hash, mode, created_at, last_activity_at, verified_via) VALUES ('v', 'h', 'ai', 'now', 'now', 'guess')")

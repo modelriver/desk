@@ -7,7 +7,7 @@ import { brandingSettings } from '../server/settings.server.ts'
 import { ASSET_RULES, BRAND_ASSET_KINDS, type BrandAssetKind } from '../lib/brand-assets.ts'
 import type { Branding } from '../lib/branding.ts'
 
-const FIELDS = ['name', 'homeTitle', 'description', 'showName', 'brandColor', 'bodyFont', 'headingFont', 'corners'] as const satisfies ReadonlyArray<keyof Branding>
+const FIELDS = ['name', 'homeTitle', 'description', 'showName', 'brandColor', 'bodyFont', 'headingFont', 'corners', 'homeHeading', 'homeIntro', 'askExample'] as const satisfies ReadonlyArray<keyof Branding>
 
 function limit(userId: string) {
   if (!allowAll([{ key: `branding:${userId}`, max: 60, windowMs: 10 * 60_000 }])) {

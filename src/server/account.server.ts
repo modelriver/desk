@@ -7,11 +7,13 @@ import { avatarOf } from './avatars.server.ts'
 export interface NotificationPrefs {
   handoff: boolean
   newConversations: boolean
+  newTickets: boolean
+  myTickets: boolean
 }
 
 export function getAccount(userId: string) {
   const row = getDb()
-    .prepare('SELECT name, email, role, totp_enabled_at, notify_handoff, notify_new_conversations FROM users WHERE id = ?')
+    .prepare('SELECT name, email, role, totp_enabled_at, notify_handoff, notify_new_conversations, notify_new_tickets, notify_my_tickets FROM users WHERE id = ?')
     .get(userId) as {
     name: string
     email: string
@@ -19,6 +21,8 @@ export function getAccount(userId: string) {
     totp_enabled_at: string | null
     notify_handoff: number
     notify_new_conversations: number
+    notify_new_tickets: number
+    notify_my_tickets: number
   }
   const email = emailStatus()
   return {
@@ -28,7 +32,12 @@ export function getAccount(userId: string) {
     twoFactorSince: row.totp_enabled_at,
     // Shown beside this person's replies in the chat.
     avatar: avatarOf(userId),
-    notifications: { handoff: row.notify_handoff === 1, newConversations: row.notify_new_conversations === 1 },
+    notifications: {
+      handoff: row.notify_handoff === 1,
+      newConversations: row.notify_new_conversations === 1,
+      newTickets: row.notify_new_tickets === 1,
+      myTickets: row.notify_my_tickets === 1,
+    },
     // Whether this server can send email at all; the page explains if not.
     emailReady: email.ready,
   }
@@ -36,6 +45,6 @@ export function getAccount(userId: string) {
 
 export function setNotificationPrefs(userId: string, prefs: NotificationPrefs) {
   getDb()
-    .prepare('UPDATE users SET notify_handoff = ?, notify_new_conversations = ? WHERE id = ?')
-    .run(prefs.handoff ? 1 : 0, prefs.newConversations ? 1 : 0, userId)
+    .prepare('UPDATE users SET notify_handoff = ?, notify_new_conversations = ?, notify_new_tickets = ?, notify_my_tickets = ? WHERE id = ?')
+    .run(prefs.handoff ? 1 : 0, prefs.newConversations ? 1 : 0, prefs.newTickets ? 1 : 0, prefs.myTickets ? 1 : 0, userId)
 }

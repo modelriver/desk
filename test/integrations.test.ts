@@ -295,3 +295,9 @@ test('Custom HTTP goes by the name the admin gave it', async () => {
   saveConnector(conn, { id: 'custom_http', enabled: true, values: {}, clear: ['name'], options: {} }, admin, env())
   assert.equal(relevantConnectors(conn, { text: 'seats', conversationId: 'c1' }, env())[0]!.displayName!(loadConfig(conn, connectorById('custom_http')!, env()).config), 'Custom HTTP')
 })
+
+test('the dashboard’s list of connector ids matches the connectors', async () => {
+  const { CONNECTORS } = await import('../src/server/integrations.server.ts')
+  const { CONNECTOR_IDS } = await import('../src/lib/connector-ids.ts')
+  assert.deepEqual([...CONNECTOR_IDS].sort(), CONNECTORS.map((c) => c.id).sort())
+})

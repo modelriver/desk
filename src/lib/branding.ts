@@ -19,9 +19,26 @@ export interface Branding {
   bodyFont?: string
   headingFont?: string
   corners?: CornerId
+  // The home page's hero: its heading, the line under it, and the example in
+  // the question box. Blank uses HOME_DEFAULTS.
+  homeHeading?: string
+  homeIntro?: string
+  askExample?: string
 }
 
-export const LIMITS = { name: 60, homeTitle: 70, description: 200 } as const
+export const LIMITS = { name: 60, homeTitle: 70, description: 200, homeHeading: 60, homeIntro: 240, askExample: 120 } as const
+
+// The home page's hero text when Settings leaves it blank.
+export const HOME_DEFAULTS = {
+  heading: 'How can we help?',
+  intro: 'Ask in your own words. The answer comes from our guides and links to the articles it used. If you need a person, our team can join the chat.',
+  example: 'For example: how do I export my whole workspace?',
+  // The line's default while "Talk with a person" is off in Settings.
+  introWithoutTeam:
+    'Ask in your own words. The answer comes from our guides and links to the articles it used. If you need our team, you can raise a ticket.',
+  // ...and new tickets are off too.
+  introAnswersOnly: 'Ask in your own words. The answer comes from our guides and links to the articles it used.',
+} as const
 
 // Search engines show about this much of a title and a description.
 export const RECOMMENDED = { title: 60, description: 160 } as const
@@ -87,7 +104,7 @@ export function parseBranding(input: unknown): Branding {
   const raw = input as Record<string, unknown>
   const out: Branding = {}
 
-  const text = (key: 'name' | 'homeTitle' | 'description', label: string) => {
+  const text = (key: 'name' | 'homeTitle' | 'description' | 'homeHeading' | 'homeIntro' | 'askExample', label: string) => {
     const value = raw[key]
     if (value === undefined || value === null) return
     if (typeof value !== 'string') throw new BrandingError(`${label} must be text.`)
@@ -99,6 +116,9 @@ export function parseBranding(input: unknown): Branding {
   text('name', 'The name')
   text('homeTitle', 'The home page title')
   text('description', 'The description')
+  text('homeHeading', 'The home page heading')
+  text('homeIntro', 'The line under the heading')
+  text('askExample', 'The example question')
 
   if (raw.showName !== undefined && raw.showName !== null) {
     if (typeof raw.showName !== 'boolean') throw new BrandingError('showName must be true or false.')
@@ -164,7 +184,7 @@ const NEUTRAL_SATURATION = 8
 // Ink buttons for a black, white or grey brand: near-black in light mode,
 // near-white in dark mode, on soft grey highlights.
 const MONO_LIGHT: Accents = { primary: '#111111', primaryHover: '#333333', primaryForeground: '#ffffff', accent: '#f0f0f0', accentForeground: '#171717', ring: '#111111' }
-const MONO_DARK: Accents = { primary: '#f2f2f2', primaryHover: '#d4d4d4', primaryForeground: '#111111', accent: '#262626', accentForeground: '#ededed', ring: '#f2f2f2' }
+const MONO_DARK: Accents = { primary: '#f2f2f2', primaryHover: '#d4d4d4', primaryForeground: '#111111', accent: '#2c2c2c', accentForeground: '#ededed', ring: '#f2f2f2' }
 
 export function lightAccents(hex: string): Accents {
   const [h, s, l0] = toHsl(hex)

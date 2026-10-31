@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ChatRouteImport } from './routes/chat'
 import { Route as DashboardRouteRouteImport } from './routes/dashboard/route'
 import { Route as FaviconDotsvgRouteImport } from './routes/favicon[.]svg'
 import { Route as LoginRouteImport } from './routes/login'
@@ -20,6 +21,8 @@ import { Route as ArticlesIndexRouteImport } from './routes/articles/index'
 import { Route as ArticlesSplatRouteImport } from './routes/articles/$'
 import { Route as AvatarsHashRouteImport } from './routes/avatars/$hash'
 import { Route as BrandAssetRouteImport } from './routes/brand/$asset'
+import { Route as CustomerPortalIndexRouteImport } from './routes/customer-portal.index'
+import { Route as CustomerPortalNewRouteImport } from './routes/customer-portal.new'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as DashboardAccountRouteImport } from './routes/dashboard/account'
 import { Route as DashboardArchivedRouteImport } from './routes/dashboard/archived'
@@ -27,16 +30,28 @@ import { Route as DashboardDataRouteImport } from './routes/dashboard/data'
 import { Route as DashboardEditorRouteImport } from './routes/dashboard/editor'
 import { Route as DashboardInsightsRouteImport } from './routes/dashboard/insights'
 import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard/integrations'
+import { Route as DashboardKnowledgeRouteImport } from './routes/dashboard/knowledge'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard/settings'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard/users'
 import { Route as HelpIndexRouteImport } from './routes/help/index'
 import { Route as HelpSplatRouteImport } from './routes/help/$'
 import { Route as MediaSplatRouteImport } from './routes/media/$'
+import { Route as TicketsTicketRefRouteImport } from './routes/tickets.$ticketRef'
+import { Route as CustomerPortalTicketsTicketRefRouteImport } from './routes/customer-portal.tickets.$ticketRef'
 import { Route as DashboardCSessionIdRouteImport } from './routes/dashboard/c.$sessionId'
+import { Route as DashboardTicketsIndexRouteImport } from './routes/dashboard/tickets.index'
+import { Route as DashboardTicketsTicketRefRouteImport } from './routes/dashboard/tickets.$ticketRef'
+import { Route as DashboardTicketsBlockedRouteImport } from './routes/dashboard/tickets.blocked'
+import { Route as DashboardTicketsSubjectsRouteImport } from './routes/dashboard/tickets.subjects'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChatRoute = ChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRouteRoute = DashboardRouteRouteImport.update({
@@ -89,6 +104,16 @@ const BrandAssetRoute = BrandAssetRouteImport.update({
   path: '/brand/$asset',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CustomerPortalIndexRoute = CustomerPortalIndexRouteImport.update({
+  id: '/customer-portal/',
+  path: '/customer-portal/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CustomerPortalNewRoute = CustomerPortalNewRouteImport.update({
+  id: '/customer-portal/new',
+  path: '/customer-portal/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardIndexRoute = DashboardIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -124,6 +149,11 @@ const DashboardIntegrationsRoute = DashboardIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => DashboardRouteRoute,
 } as any)
+const DashboardKnowledgeRoute = DashboardKnowledgeRouteImport.update({
+  id: '/knowledge',
+  path: '/knowledge',
+  getParentRoute: () => DashboardRouteRoute,
+} as any)
 const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -149,15 +179,49 @@ const MediaSplatRoute = MediaSplatRouteImport.update({
   path: '/media/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TicketsTicketRefRoute = TicketsTicketRefRouteImport.update({
+  id: '/tickets/$ticketRef',
+  path: '/tickets/$ticketRef',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CustomerPortalTicketsTicketRefRoute =
+  CustomerPortalTicketsTicketRefRouteImport.update({
+    id: '/customer-portal/tickets/$ticketRef',
+    path: '/customer-portal/tickets/$ticketRef',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const DashboardCSessionIdRoute = DashboardCSessionIdRouteImport.update({
   id: '/c/$sessionId',
   path: '/c/$sessionId',
   getParentRoute: () => DashboardRouteRoute,
 } as any)
+const DashboardTicketsIndexRoute = DashboardTicketsIndexRouteImport.update({
+  id: '/tickets/',
+  path: '/tickets/',
+  getParentRoute: () => DashboardRouteRoute,
+} as any)
+const DashboardTicketsTicketRefRoute =
+  DashboardTicketsTicketRefRouteImport.update({
+    id: '/tickets/$ticketRef',
+    path: '/tickets/$ticketRef',
+    getParentRoute: () => DashboardRouteRoute,
+  } as any)
+const DashboardTicketsBlockedRoute = DashboardTicketsBlockedRouteImport.update({
+  id: '/tickets/blocked',
+  path: '/tickets/blocked',
+  getParentRoute: () => DashboardRouteRoute,
+} as any)
+const DashboardTicketsSubjectsRoute =
+  DashboardTicketsSubjectsRouteImport.update({
+    id: '/tickets/subjects',
+    path: '/tickets/subjects',
+    getParentRoute: () => DashboardRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteRouteWithChildren
+  '/chat': typeof ChatRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/login': typeof LoginRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -166,23 +230,33 @@ export interface FileRoutesByFullPath {
   '/articles/$': typeof ArticlesSplatRoute
   '/avatars/$hash': typeof AvatarsHashRoute
   '/brand/$asset': typeof BrandAssetRoute
+  '/customer-portal/new': typeof CustomerPortalNewRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/archived': typeof DashboardArchivedRoute
   '/dashboard/data': typeof DashboardDataRoute
   '/dashboard/editor': typeof DashboardEditorRoute
   '/dashboard/insights': typeof DashboardInsightsRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/knowledge': typeof DashboardKnowledgeRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/help/$': typeof HelpSplatRoute
   '/media/$': typeof MediaSplatRoute
+  '/tickets/$ticketRef': typeof TicketsTicketRefRoute
   '/articles/': typeof ArticlesIndexRoute
+  '/customer-portal/': typeof CustomerPortalIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/help/': typeof HelpIndexRoute
+  '/customer-portal/tickets/$ticketRef': typeof CustomerPortalTicketsTicketRefRoute
   '/dashboard/c/$sessionId': typeof DashboardCSessionIdRoute
+  '/dashboard/tickets/$ticketRef': typeof DashboardTicketsTicketRefRoute
+  '/dashboard/tickets/blocked': typeof DashboardTicketsBlockedRoute
+  '/dashboard/tickets/subjects': typeof DashboardTicketsSubjectsRoute
+  '/dashboard/tickets/': typeof DashboardTicketsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/chat': typeof ChatRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/login': typeof LoginRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -191,25 +265,35 @@ export interface FileRoutesByTo {
   '/articles/$': typeof ArticlesSplatRoute
   '/avatars/$hash': typeof AvatarsHashRoute
   '/brand/$asset': typeof BrandAssetRoute
+  '/customer-portal/new': typeof CustomerPortalNewRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/archived': typeof DashboardArchivedRoute
   '/dashboard/data': typeof DashboardDataRoute
   '/dashboard/editor': typeof DashboardEditorRoute
   '/dashboard/insights': typeof DashboardInsightsRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/knowledge': typeof DashboardKnowledgeRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/help/$': typeof HelpSplatRoute
   '/media/$': typeof MediaSplatRoute
+  '/tickets/$ticketRef': typeof TicketsTicketRefRoute
   '/articles': typeof ArticlesIndexRoute
+  '/customer-portal': typeof CustomerPortalIndexRoute
   '/dashboard': typeof DashboardIndexRoute
   '/help': typeof HelpIndexRoute
+  '/customer-portal/tickets/$ticketRef': typeof CustomerPortalTicketsTicketRefRoute
   '/dashboard/c/$sessionId': typeof DashboardCSessionIdRoute
+  '/dashboard/tickets/$ticketRef': typeof DashboardTicketsTicketRefRoute
+  '/dashboard/tickets/blocked': typeof DashboardTicketsBlockedRoute
+  '/dashboard/tickets/subjects': typeof DashboardTicketsSubjectsRoute
+  '/dashboard/tickets': typeof DashboardTicketsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteRouteWithChildren
+  '/chat': typeof ChatRoute
   '/favicon.svg': typeof FaviconDotsvgRoute
   '/login': typeof LoginRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -218,26 +302,36 @@ export interface FileRoutesById {
   '/articles/$': typeof ArticlesSplatRoute
   '/avatars/$hash': typeof AvatarsHashRoute
   '/brand/$asset': typeof BrandAssetRoute
+  '/customer-portal/new': typeof CustomerPortalNewRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/archived': typeof DashboardArchivedRoute
   '/dashboard/data': typeof DashboardDataRoute
   '/dashboard/editor': typeof DashboardEditorRoute
   '/dashboard/insights': typeof DashboardInsightsRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/knowledge': typeof DashboardKnowledgeRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/help/$': typeof HelpSplatRoute
   '/media/$': typeof MediaSplatRoute
+  '/tickets/$ticketRef': typeof TicketsTicketRefRoute
   '/articles/': typeof ArticlesIndexRoute
+  '/customer-portal/': typeof CustomerPortalIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/help/': typeof HelpIndexRoute
+  '/customer-portal/tickets/$ticketRef': typeof CustomerPortalTicketsTicketRefRoute
   '/dashboard/c/$sessionId': typeof DashboardCSessionIdRoute
+  '/dashboard/tickets/$ticketRef': typeof DashboardTicketsTicketRefRoute
+  '/dashboard/tickets/blocked': typeof DashboardTicketsBlockedRoute
+  '/dashboard/tickets/subjects': typeof DashboardTicketsSubjectsRoute
+  '/dashboard/tickets/': typeof DashboardTicketsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/dashboard'
+    | '/chat'
     | '/favicon.svg'
     | '/login'
     | '/robots.txt'
@@ -246,23 +340,33 @@ export interface FileRouteTypes {
     | '/articles/$'
     | '/avatars/$hash'
     | '/brand/$asset'
+    | '/customer-portal/new'
     | '/dashboard/account'
     | '/dashboard/archived'
     | '/dashboard/data'
     | '/dashboard/editor'
     | '/dashboard/insights'
     | '/dashboard/integrations'
+    | '/dashboard/knowledge'
     | '/dashboard/settings'
     | '/dashboard/users'
     | '/help/$'
     | '/media/$'
+    | '/tickets/$ticketRef'
     | '/articles/'
+    | '/customer-portal/'
     | '/dashboard/'
     | '/help/'
+    | '/customer-portal/tickets/$ticketRef'
     | '/dashboard/c/$sessionId'
+    | '/dashboard/tickets/$ticketRef'
+    | '/dashboard/tickets/blocked'
+    | '/dashboard/tickets/subjects'
+    | '/dashboard/tickets/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/chat'
     | '/favicon.svg'
     | '/login'
     | '/robots.txt'
@@ -271,24 +375,34 @@ export interface FileRouteTypes {
     | '/articles/$'
     | '/avatars/$hash'
     | '/brand/$asset'
+    | '/customer-portal/new'
     | '/dashboard/account'
     | '/dashboard/archived'
     | '/dashboard/data'
     | '/dashboard/editor'
     | '/dashboard/insights'
     | '/dashboard/integrations'
+    | '/dashboard/knowledge'
     | '/dashboard/settings'
     | '/dashboard/users'
     | '/help/$'
     | '/media/$'
+    | '/tickets/$ticketRef'
     | '/articles'
+    | '/customer-portal'
     | '/dashboard'
     | '/help'
+    | '/customer-portal/tickets/$ticketRef'
     | '/dashboard/c/$sessionId'
+    | '/dashboard/tickets/$ticketRef'
+    | '/dashboard/tickets/blocked'
+    | '/dashboard/tickets/subjects'
+    | '/dashboard/tickets'
   id:
     | '__root__'
     | '/'
     | '/dashboard'
+    | '/chat'
     | '/favicon.svg'
     | '/login'
     | '/robots.txt'
@@ -297,25 +411,35 @@ export interface FileRouteTypes {
     | '/articles/$'
     | '/avatars/$hash'
     | '/brand/$asset'
+    | '/customer-portal/new'
     | '/dashboard/account'
     | '/dashboard/archived'
     | '/dashboard/data'
     | '/dashboard/editor'
     | '/dashboard/insights'
     | '/dashboard/integrations'
+    | '/dashboard/knowledge'
     | '/dashboard/settings'
     | '/dashboard/users'
     | '/help/$'
     | '/media/$'
+    | '/tickets/$ticketRef'
     | '/articles/'
+    | '/customer-portal/'
     | '/dashboard/'
     | '/help/'
+    | '/customer-portal/tickets/$ticketRef'
     | '/dashboard/c/$sessionId'
+    | '/dashboard/tickets/$ticketRef'
+    | '/dashboard/tickets/blocked'
+    | '/dashboard/tickets/subjects'
+    | '/dashboard/tickets/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRouteRoute: typeof DashboardRouteRouteWithChildren
+  ChatRoute: typeof ChatRoute
   FaviconDotsvgRoute: typeof FaviconDotsvgRoute
   LoginRoute: typeof LoginRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
@@ -324,10 +448,14 @@ export interface RootRouteChildren {
   ArticlesSplatRoute: typeof ArticlesSplatRoute
   AvatarsHashRoute: typeof AvatarsHashRoute
   BrandAssetRoute: typeof BrandAssetRoute
+  CustomerPortalNewRoute: typeof CustomerPortalNewRoute
   HelpSplatRoute: typeof HelpSplatRoute
   MediaSplatRoute: typeof MediaSplatRoute
+  TicketsTicketRefRoute: typeof TicketsTicketRefRoute
   ArticlesIndexRoute: typeof ArticlesIndexRoute
+  CustomerPortalIndexRoute: typeof CustomerPortalIndexRoute
   HelpIndexRoute: typeof HelpIndexRoute
+  CustomerPortalTicketsTicketRefRoute: typeof CustomerPortalTicketsTicketRefRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -337,6 +465,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chat': {
+      id: '/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -409,6 +544,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrandAssetRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/customer-portal/': {
+      id: '/customer-portal/'
+      path: '/customer-portal'
+      fullPath: '/customer-portal/'
+      preLoaderRoute: typeof CustomerPortalIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/customer-portal/new': {
+      id: '/customer-portal/new'
+      path: '/customer-portal/new'
+      fullPath: '/customer-portal/new'
+      preLoaderRoute: typeof CustomerPortalNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/': {
       id: '/dashboard/'
       path: '/'
@@ -458,6 +607,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIntegrationsRouteImport
       parentRoute: typeof DashboardRouteRoute
     }
+    '/dashboard/knowledge': {
+      id: '/dashboard/knowledge'
+      path: '/knowledge'
+      fullPath: '/dashboard/knowledge'
+      preLoaderRoute: typeof DashboardKnowledgeRouteImport
+      parentRoute: typeof DashboardRouteRoute
+    }
     '/dashboard/settings': {
       id: '/dashboard/settings'
       path: '/settings'
@@ -493,11 +649,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MediaSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tickets/$ticketRef': {
+      id: '/tickets/$ticketRef'
+      path: '/tickets/$ticketRef'
+      fullPath: '/tickets/$ticketRef'
+      preLoaderRoute: typeof TicketsTicketRefRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/customer-portal/tickets/$ticketRef': {
+      id: '/customer-portal/tickets/$ticketRef'
+      path: '/customer-portal/tickets/$ticketRef'
+      fullPath: '/customer-portal/tickets/$ticketRef'
+      preLoaderRoute: typeof CustomerPortalTicketsTicketRefRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/c/$sessionId': {
       id: '/dashboard/c/$sessionId'
       path: '/c/$sessionId'
       fullPath: '/dashboard/c/$sessionId'
       preLoaderRoute: typeof DashboardCSessionIdRouteImport
+      parentRoute: typeof DashboardRouteRoute
+    }
+    '/dashboard/tickets/': {
+      id: '/dashboard/tickets/'
+      path: '/tickets'
+      fullPath: '/dashboard/tickets/'
+      preLoaderRoute: typeof DashboardTicketsIndexRouteImport
+      parentRoute: typeof DashboardRouteRoute
+    }
+    '/dashboard/tickets/$ticketRef': {
+      id: '/dashboard/tickets/$ticketRef'
+      path: '/tickets/$ticketRef'
+      fullPath: '/dashboard/tickets/$ticketRef'
+      preLoaderRoute: typeof DashboardTicketsTicketRefRouteImport
+      parentRoute: typeof DashboardRouteRoute
+    }
+    '/dashboard/tickets/blocked': {
+      id: '/dashboard/tickets/blocked'
+      path: '/tickets/blocked'
+      fullPath: '/dashboard/tickets/blocked'
+      preLoaderRoute: typeof DashboardTicketsBlockedRouteImport
+      parentRoute: typeof DashboardRouteRoute
+    }
+    '/dashboard/tickets/subjects': {
+      id: '/dashboard/tickets/subjects'
+      path: '/tickets/subjects'
+      fullPath: '/dashboard/tickets/subjects'
+      preLoaderRoute: typeof DashboardTicketsSubjectsRouteImport
       parentRoute: typeof DashboardRouteRoute
     }
   }
@@ -510,10 +708,15 @@ interface DashboardRouteRouteChildren {
   DashboardEditorRoute: typeof DashboardEditorRoute
   DashboardInsightsRoute: typeof DashboardInsightsRoute
   DashboardIntegrationsRoute: typeof DashboardIntegrationsRoute
+  DashboardKnowledgeRoute: typeof DashboardKnowledgeRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
   DashboardCSessionIdRoute: typeof DashboardCSessionIdRoute
+  DashboardTicketsTicketRefRoute: typeof DashboardTicketsTicketRefRoute
+  DashboardTicketsBlockedRoute: typeof DashboardTicketsBlockedRoute
+  DashboardTicketsSubjectsRoute: typeof DashboardTicketsSubjectsRoute
+  DashboardTicketsIndexRoute: typeof DashboardTicketsIndexRoute
 }
 
 const DashboardRouteRouteChildren: DashboardRouteRouteChildren = {
@@ -523,10 +726,15 @@ const DashboardRouteRouteChildren: DashboardRouteRouteChildren = {
   DashboardEditorRoute: DashboardEditorRoute,
   DashboardInsightsRoute: DashboardInsightsRoute,
   DashboardIntegrationsRoute: DashboardIntegrationsRoute,
+  DashboardKnowledgeRoute: DashboardKnowledgeRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardIndexRoute: DashboardIndexRoute,
   DashboardCSessionIdRoute: DashboardCSessionIdRoute,
+  DashboardTicketsTicketRefRoute: DashboardTicketsTicketRefRoute,
+  DashboardTicketsBlockedRoute: DashboardTicketsBlockedRoute,
+  DashboardTicketsSubjectsRoute: DashboardTicketsSubjectsRoute,
+  DashboardTicketsIndexRoute: DashboardTicketsIndexRoute,
 }
 
 const DashboardRouteRouteWithChildren = DashboardRouteRoute._addFileChildren(
@@ -536,6 +744,7 @@ const DashboardRouteRouteWithChildren = DashboardRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRouteRoute: DashboardRouteRouteWithChildren,
+  ChatRoute: ChatRoute,
   FaviconDotsvgRoute: FaviconDotsvgRoute,
   LoginRoute: LoginRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
@@ -544,10 +753,14 @@ const rootRouteChildren: RootRouteChildren = {
   ArticlesSplatRoute: ArticlesSplatRoute,
   AvatarsHashRoute: AvatarsHashRoute,
   BrandAssetRoute: BrandAssetRoute,
+  CustomerPortalNewRoute: CustomerPortalNewRoute,
   HelpSplatRoute: HelpSplatRoute,
   MediaSplatRoute: MediaSplatRoute,
+  TicketsTicketRefRoute: TicketsTicketRefRoute,
   ArticlesIndexRoute: ArticlesIndexRoute,
+  CustomerPortalIndexRoute: CustomerPortalIndexRoute,
   HelpIndexRoute: HelpIndexRoute,
+  CustomerPortalTicketsTicketRefRoute: CustomerPortalTicketsTicketRefRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -5,7 +5,8 @@ import { env } from './env.server.ts'
 
 // SQLite holds app data only: users, auth sessions, article metadata and the
 // conversation -> ModelRiver session mapping. Messages live in ModelRiver.
-const MIGRATIONS = [
+// Exported for tests that start from an older version.
+export const MIGRATIONS = [
   `
   CREATE TABLE users (
     id TEXT PRIMARY KEY,
@@ -233,6 +234,170 @@ const MIGRATIONS = [
     updated_at TEXT NOT NULL
   );
   `,
+  // v20: messages visitors leave for the team while "Talk with a person" is off.
+  // They outlive the chat they came from (its id is cleared when it's deleted).
+  `
+  CREATE TABLE visitor_messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+    session_id TEXT,
+    visitor_name TEXT NOT NULL,
+    email TEXT,
+    email_verified INTEGER NOT NULL DEFAULT 0,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    handled_at TEXT,
+    handled_by TEXT
+  );
+  CREATE INDEX visitor_messages_open ON visitor_messages (handled_at, created_at);
+  `,
+  // v21: who's waiting for a person, read by every inbox poll and the sidebar
+  // count: an index over just those rows, so it stays instant with a long history.
+  `
+  CREATE INDEX conversations_waiting ON conversations (handoff_requested_at)
+    WHERE handoff_requested_at IS NOT NULL AND ended_at IS NULL;
+  `,
+  // v22: tickets. A ticket is a request the team answers by email: a message
+  // left from the chat, a chat turned into one, or one a team member opens.
+  // Its id is the number people see (#12). Everything that happens on it
+  // (the customer's message, replies, notes, status and assignee changes) is
+  // a ticket_event. Messages left under v20 become tickets; done ones solved.
+  // draft_sessions: ModelRiver sessions started by AI drafts, kept out of the
+  // inbox until they're deleted (see tickets.server.ts).
+  `
+  CREATE TABLE tickets (
+    id INTEGER PRIMARY KEY,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+    session_id TEXT,
+    visitor_name TEXT NOT NULL,
+    email TEXT,
+    email_verified INTEGER NOT NULL DEFAULT 0,
+    subject TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'pending', 'solved')),
+    assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    source TEXT NOT NULL CHECK (source IN ('chat', 'team')),
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    solved_at TEXT,
+    legacy_id TEXT
+  );
+  CREATE INDEX tickets_status ON tickets (status, updated_at);
+  CREATE INDEX tickets_assignee ON tickets (assignee_id, status);
+  CREATE TABLE ticket_events (
+    id INTEGER PRIMARY KEY,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('message', 'reply', 'note', 'status', 'assign')),
+    author_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    author_name TEXT,
+    body TEXT NOT NULL DEFAULT '',
+    email_status TEXT CHECK (email_status IN ('sent', 'failed')),
+    email_error TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX ticket_events_ticket ON ticket_events (ticket_id, id);
+  CREATE TABLE draft_sessions (
+    session_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL
+  );
+  INSERT INTO tickets (conversation_id, session_id, visitor_name, email, email_verified, subject, status, source, created_at, updated_at, solved_at, legacy_id)
+    SELECT conversation_id, session_id, visitor_name, email, email_verified,
+           substr(trim(replace(replace(text, char(13), ' '), char(10), ' ')), 1, 80),
+           CASE WHEN handled_at IS NULL THEN 'open' ELSE 'solved' END, 'chat',
+           created_at, coalesce(handled_at, created_at), handled_at, id
+    FROM visitor_messages ORDER BY created_at;
+  INSERT INTO ticket_events (ticket_id, kind, author_name, body, created_at)
+    SELECT t.id, 'message', v.visitor_name, v.text, v.created_at FROM tickets t JOIN visitor_messages v ON v.id = t.legacy_id;
+  INSERT INTO ticket_events (ticket_id, kind, author_name, body, created_at)
+    SELECT t.id, 'status', v.handled_by, 'solved', v.handled_at FROM tickets t JOIN visitor_messages v ON v.id = t.legacy_id
+    WHERE v.handled_at IS NOT NULL;
+  ALTER TABLE tickets DROP COLUMN legacy_id;
+  DROP TABLE visitor_messages;
+  `,
+  // v23: each ticket's reference is a short random code (#K7F3Q9), not its
+  // row number, so customers can't tell how many tickets there are. Codes use
+  // only characters that can't be misread (see ticket-core.ts).
+  `
+  ALTER TABLE tickets ADD COLUMN ref TEXT;
+  UPDATE tickets SET ref = substr('ABCDEFGHJKMNPQRSTVWXYZ23456789', (abs(random()) % 30) + 1, 1) || substr('ABCDEFGHJKMNPQRSTVWXYZ23456789', (abs(random()) % 30) + 1, 1) || substr('ABCDEFGHJKMNPQRSTVWXYZ23456789', (abs(random()) % 30) + 1, 1) || substr('ABCDEFGHJKMNPQRSTVWXYZ23456789', (abs(random()) % 30) + 1, 1) || substr('ABCDEFGHJKMNPQRSTVWXYZ23456789', (abs(random()) % 30) + 1, 1) || substr('ABCDEFGHJKMNPQRSTVWXYZ23456789', (abs(random()) % 30) + 1, 1);
+  CREATE UNIQUE INDEX tickets_ref ON tickets (ref);
+  `,
+  // v24: customers viewing their ticket (/tickets/<ref>). ticket_links: the
+  // private key in each reply email, which signs them in for that ticket.
+  // customer_codes: 6-digit codes for opening a ticket without the link.
+  // customer_sessions: a signed-in customer's email, behind an HttpOnly cookie.
+  // Keys, codes and session tokens are stored hashed.
+  `
+  CREATE TABLE ticket_links (
+    token_hash TEXT PRIMARY KEY,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  );
+  CREATE INDEX ticket_links_expires ON ticket_links (expires_at);
+  CREATE TABLE customer_codes (
+    email TEXT PRIMARY KEY,
+    code_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until TEXT
+  );
+  CREATE TABLE customer_sessions (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  );
+  CREATE INDEX customer_sessions_expires ON customer_sessions (expires_at);
+  `,
+  // v25: the customer portal. blocked_customers: addresses the team blocked
+  // (no codes, sign-ins, links, tickets or replies). tickets.origin: where a
+  // ticket came from, which can now also be the portal (source keeps its
+  // original two values, as SQLite can't widen its check in place).
+  `
+  CREATE TABLE blocked_customers (
+    email TEXT PRIMARY KEY,
+    blocked_at TEXT NOT NULL,
+    blocked_by TEXT,
+    reason TEXT
+  );
+  ALTER TABLE tickets ADD COLUMN origin TEXT;
+  UPDATE tickets SET origin = source;
+  CREATE INDEX tickets_email ON tickets (email, updated_at);
+  `,
+  // v26: emails that failed to send, retried with a growing wait (see
+  // outbox.server.ts); a ticket reply's row says which reply it is and the
+  // status to set once it's sent. And ticket notifications, split from
+  // "someone wants a person": every new ticket (on for whoever had that on),
+  // and activity on tickets assigned to you (on for everyone).
+  `
+  CREATE TABLE email_outbox (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    message TEXT NOT NULL,
+    ticket_event_id INTEGER REFERENCES ticket_events(id) ON DELETE CASCADE,
+    then_status TEXT,
+    attempts INTEGER NOT NULL DEFAULT 1,
+    next_attempt_at TEXT NOT NULL,
+    last_error TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX email_outbox_due ON email_outbox (next_attempt_at);
+  ALTER TABLE users ADD COLUMN notify_new_tickets INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN notify_my_tickets INTEGER NOT NULL DEFAULT 1;
+  UPDATE users SET notify_new_tickets = notify_handoff;
+  `,
+  // v27: the subjects customers pick from when they raise a ticket, set up
+  // under Tickets → Subjects, in the order they're shown.
+  `
+  CREATE TABLE ticket_subjects (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `,
 ]
 
 let db: DatabaseSync | undefined
@@ -251,7 +416,7 @@ export function openDb(file: string): DatabaseSync {
   return conn
 }
 
-function migrate(conn: DatabaseSync) {
+export function migrate(conn: DatabaseSync) {
   const row = conn.prepare('PRAGMA user_version').get() as { user_version: number }
   for (let v = row.user_version; v < MIGRATIONS.length; v++) {
     conn.exec('BEGIN')

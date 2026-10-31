@@ -65,6 +65,11 @@ export function Input({ className, ...props }: ComponentProps<'input'>) {
   return <input className={cn(field, height, className)} {...props} />
 }
 
+// The same look and focus ring as Input, for text on several lines.
+export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
+  return <textarea className={cn(field, 'block py-2 leading-relaxed', className)} {...props} />
+}
+
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select className={cn(field, 'h-8 appearance-none bg-no-repeat pr-8', className)} style={{ backgroundImage: CHEVRON, backgroundPosition: 'right 0.6rem center', backgroundSize: '14px' }} {...props}>
@@ -177,12 +182,13 @@ export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
 
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         {description && <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {/* Beside the title on wider screens, however long the description. */}
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
   )
 }

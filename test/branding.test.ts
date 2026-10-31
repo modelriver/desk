@@ -192,3 +192,16 @@ test('a dark-mode logo pairs with whichever light logo shows', async () => {
   removeAsset('logo-dark', sam)
   assert.equal(getSiteConfig().logo, null)
 })
+
+test("the home page's heading, line and example can be set, and fall back to Desk's own", () => {
+  assert.deepEqual(parseBranding({ homeHeading: '  Hi there ', homeIntro: '', askExample: 'For example: how do I add a fallback model?' }), {
+    homeHeading: 'Hi there',
+    askExample: 'For example: how do I add a fallback model?',
+  })
+  assert.throws(() => parseBranding({ askExample: 'x'.repeat(121) }), /120 characters/)
+  assert.deepEqual(getSiteConfig().home, { heading: null, intro: null, example: null })
+  saveBranding({ homeHeading: 'Hi there', askExample: 'For example: how do I add a fallback model?' }, sam)
+  assert.deepEqual(getSiteConfig().home, { heading: 'Hi there', intro: null, example: 'For example: how do I add a fallback model?' })
+  saveBranding({ homeHeading: '', askExample: '' }, sam)
+  assert.deepEqual(getSiteConfig().home, { heading: null, intro: null, example: null })
+})

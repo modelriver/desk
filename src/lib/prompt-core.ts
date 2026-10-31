@@ -13,7 +13,13 @@ const MAX_CONTEXT_CHARS = 6000
 // Builds the per-turn system message. It is sent as a separate system message
 // (not part of the user's text), so ModelRiver session memory keeps only the
 // user's question and the answer, never these excerpts.
-export function buildContextMessage(chunks: Chunk[]): { content: string; sources: Source[] } {
+// `handoff` is off when "Talk with a person" is turned off in Settings: the
+// assistant offers to raise a ticket for the team instead of passing the chat,
+// unless `tickets` is off too, when it has nothing to offer but the articles.
+export function buildContextMessage(
+  chunks: Chunk[],
+  { handoff = true, tickets = true }: { handoff?: boolean; tickets?: boolean } = {},
+): { content: string; sources: Source[] } {
   const sources = new Map<string, Source>()
   const parts: string[] = []
   let used = 0
@@ -34,8 +40,12 @@ export function buildContextMessage(chunks: Chunk[]): { content: string; sources
     'You are the support assistant for this product. Answer using the knowledge base excerpts below.',
     'Cite public articles inline with their exact marker, for example [[getting-started]]. Only use markers that appear below.',
     'Internal notes may inform your answer, but never quote them, cite them, link to them or say that they exist.',
-    `If the excerpts do not answer the question, say you are not sure, offer to connect the user with the team, and end your reply with ${UNSURE_MARKER}. Do not invent features, prices or policies.`,
-    `If the user asks to talk to a person, or accepts your offer to connect them, reply with one short sentence saying you are passing the chat to the team, and end your reply with ${HANDOFF_MARKER}. Never use ${HANDOFF_MARKER} otherwise.`,
+    `If the excerpts do not answer the question, say you are not sure, ${handoff ? 'offer to connect the user with the team' : tickets ? 'offer to raise a ticket for the team' : 'and suggest browsing the help articles or trying again later'}, and end your reply with ${UNSURE_MARKER}. Do not invent features, prices or policies.`,
+    handoff
+      ? `If the user asks to talk to a person, or accepts your offer to connect them, reply with one short sentence saying you are passing the chat to the team, and end your reply with ${HANDOFF_MARKER}. Never use ${HANDOFF_MARKER} otherwise.`
+      : tickets
+        ? `No one from the team can join this chat right now. If the user asks to talk to a person, or accepts your offer to raise a ticket, say kindly in one or two short sentences that no one is available to chat at the moment, and that they can raise a ticket with the form below the chat and the team will reply by email. Never promise a call or a time. End that reply with ${HANDOFF_MARKER}, and never use ${HANDOFF_MARKER} otherwise.`
+        : `No one from the team can join this chat right now, and new tickets aren't being taken. If the user asks to talk to a person, say kindly in one or two short sentences that no one is available at the moment and that they can try again later. Never promise a call, a time, a ticket or an email. Never use ${HANDOFF_MARKER}.`,
     'Keep answers short and use Markdown.',
   ].join('\n')
 

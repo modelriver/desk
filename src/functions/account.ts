@@ -11,8 +11,9 @@ export const getMyAccount = createServerFn({ method: 'GET' }).handler(() => getA
 export const setMyNotifications = createServerFn({ method: 'POST' })
   .validator((input: unknown) => {
     const o = asObject(input)
-    if (typeof o.handoff !== 'boolean' || typeof o.newConversations !== 'boolean') throw new Error('Invalid notification settings.')
-    return { handoff: o.handoff, newConversations: o.newConversations }
+    const keys = ['handoff', 'newConversations', 'newTickets', 'myTickets'] as const
+    if (keys.some((k) => typeof o[k] !== 'boolean')) throw new Error('Invalid notification settings.')
+    return { handoff: o.handoff as boolean, newConversations: o.newConversations as boolean, newTickets: o.newTickets as boolean, myTickets: o.myTickets as boolean }
   })
   .handler(({ data }) => {
     const me = requireUser()

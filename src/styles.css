@@ -151,6 +151,90 @@
     width 0.18s cubic-bezier(0.2, 0, 0, 1);
 }
 
+/*
+ * A success tick (components/SuccessTick.tsx): the ring draws, its tint fades
+ * in, then the check strokes in, with a small pop. About 0.6 s, quicker than a
+ * payment page's, since it's a step on the way. Each part opts in with
+ * data-motion; with reduced motion the animations are off and it's simply drawn.
+ */
+@keyframes tick-pop {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes tick-draw {
+  from {
+    stroke-dashoffset: var(--len);
+  }
+}
+@keyframes tick-tint {
+  from {
+    fill-opacity: 0;
+  }
+}
+.success-tick {
+  animation: tick-pop 360ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+}
+.success-tick .tick-ring {
+  stroke-dasharray: var(--len);
+  animation: tick-draw 360ms ease-out both;
+}
+.success-tick .tick-tint {
+  animation: tick-tint 260ms 180ms ease-out both;
+}
+.success-tick .tick-check {
+  stroke-dasharray: var(--len);
+  animation: tick-draw 220ms 280ms ease-out both;
+}
+
+/*
+ * An AI draft being written (ticket replies): a sheen of the brand colour
+ * that travels round the reply box's edge, and a shimmer across the status
+ * line. Both opt in with data-motion; with reduced motion they hold still.
+ */
+@keyframes ai-sheen {
+  to {
+    background-position: -200% 0;
+  }
+}
+.ai-sheen {
+  background: linear-gradient(
+    90deg,
+    var(--border) 0%,
+    var(--primary) 25%,
+    color-mix(in oklab, var(--primary) 20%, var(--border)) 50%,
+    var(--primary) 75%,
+    var(--border) 100%
+  );
+  background-size: 200% 100%;
+  animation: ai-sheen 2.2s linear infinite;
+}
+.ai-shimmer-text {
+  background: linear-gradient(90deg, var(--muted-foreground) 30%, var(--foreground) 50%, var(--muted-foreground) 70%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-sheen 1.8s linear infinite;
+}
+@keyframes ai-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+.ai-step {
+  animation: ai-step-in 280ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-motion] {
     animation: none !important;

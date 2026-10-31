@@ -52,6 +52,16 @@ export interface SiteConfig {
 // show the default mark.
 export type Logo = { light: string; dark: string | null } | null
 
+// The header logo for each colour scheme. An uploaded logo replaces
+// support.config.json's (and its dark version, which was made to match it);
+// an uploaded dark-mode logo is used over whichever light one shows. A dark
+// logo alone has nothing to pair with, so the Desk bot stays.
+export function resolveLogo(uploaded: string | null, uploadedDark: string | null, fromFile: Logo): Logo {
+  if (uploaded) return { light: uploaded, dark: uploadedDark }
+  if (fromFile) return { light: fromFile.light, dark: uploadedDark ?? fromFile.dark }
+  return null
+}
+
 export const DEFAULT_CONFIG: SiteConfig = {
   brand: { name: 'Help Center', logo: null, logoDark: null },
   theme: {

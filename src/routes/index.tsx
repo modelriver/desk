@@ -8,6 +8,7 @@ import { cn } from '../lib/cn.ts'
 import { ArticleList } from '../components/ArticleList.tsx'
 import { openChat } from '../lib/chat-bus.ts'
 import { pageHead, siteFrom, websiteData } from '../lib/seo.ts'
+import { HOME_DEFAULTS } from '../lib/branding.ts'
 
 export const Route = createFileRoute('/')({
   loader: () => getHome(),
@@ -33,18 +34,16 @@ const root = getRouteApi('__root__')
 function Home() {
   const { articles, sections } = Route.useLoaderData()
   // Chat paused from Settings: the hero points to the articles instead.
-  const { chatEnabled } = root.useLoaderData()
+  const { chatEnabled, teamCanJoin, ticketsOpen, home } = root.useLoaderData()
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6">
       <section className="pt-16 pb-12 sm:pt-24">
-        <h1 className="font-serif text-4xl leading-[1.1] tracking-tight sm:text-5xl">How can we help?</h1>
+        {/* Heading, line and example from Settings → Appearance, else the defaults. */}
+        <h1 className="font-serif text-4xl leading-[1.1] tracking-tight sm:text-5xl">{home.heading ?? HOME_DEFAULTS.heading}</h1>
         {chatEnabled ? (
           <>
-            <p className="mt-4 max-w-xl text-muted-foreground">
-              Ask in your own words. The answer comes from our guides and links to the articles it used. If you need a person, our
-              team can join the chat.
-            </p>
-            <AskBox />
+            <p className="mt-4 max-w-xl text-muted-foreground">{home.intro ?? (teamCanJoin ? HOME_DEFAULTS.intro : ticketsOpen ? HOME_DEFAULTS.introWithoutTeam : HOME_DEFAULTS.introAnswersOnly)}</p>
+            <AskBox example={home.example ?? HOME_DEFAULTS.example} />
           </>
         ) : (
           <>
@@ -98,7 +97,7 @@ function Home() {
 }
 
 // The hero: a composer that opens the chat with the question already sent.
-function AskBox() {
+function AskBox({ example }: { example: string }) {
   const [text, setText] = useState('')
   const submit = () => {
     if (!text.trim()) return
@@ -128,7 +127,7 @@ function AskBox() {
         }}
         rows={2}
         maxLength={4000}
-        placeholder="For example: how do I export my whole workspace?"
+        placeholder={example}
         className="block w-full resize-none bg-transparent px-3 pt-2 text-base outline-none placeholder:text-muted-foreground"
       />
       <div className="flex items-center justify-between gap-3 pt-1 pl-3">

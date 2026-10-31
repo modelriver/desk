@@ -8,7 +8,7 @@ import path from 'node:path'
 // throwaway file before loading them.
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'desk-chat-'))
 process.env.DATABASE_PATH = path.join(dir, 'desk.db')
-const { chatEnabled, chatStatus, setChatEnabled } = await import('../src/server/chat-availability.server.ts')
+const { chatEnabled, chatStatus, handoffEnabled, handoffStatus, setChatEnabled, setHandoffEnabled, setTicketsEnabled, ticketsEnabled, ticketsStatus } = await import('../src/server/chat-availability.server.ts')
 const { getDb } = await import('../src/server/db.server.ts')
 
 after(() => fs.rmSync(dir, { recursive: true, force: true }))
@@ -46,4 +46,34 @@ test('setting it to what it already is changes nothing and isn’t audited', () 
   setChatEnabled(true, { id: 'u1', name: 'Someone else' })
   assert.deepEqual(chatStatus(), before)
   assert.equal(auditRows().length, 2)
+})
+
+test('"Talk with a person" is on until an admin turns it off, separately from the chat', () => {
+  assert.deepEqual(handoffStatus(), { enabled: true, changedAt: null, changedBy: null })
+  const off = setHandoffEnabled(false, sam)
+  assert.equal(off.enabled, false)
+  assert.equal(off.changedBy, 'Sam')
+  assert.equal(handoffEnabled(), false)
+  assert.equal(chatEnabled(), true, 'the chat itself stays on')
+  setHandoffEnabled(false, sam)
+  setHandoffEnabled(true, sam)
+  assert.deepEqual(
+    auditRows().slice(-2).map((r) => r.action),
+    ['handoff.disabled', 'handoff.enabled'],
+  )
+})
+
+test('new tickets are on until an admin turns them off, separately from the other switches', () => {
+  assert.deepEqual(ticketsStatus(), { enabled: true, changedAt: null, changedBy: null })
+  const off = setTicketsEnabled(false, sam)
+  assert.equal(off.enabled, false)
+  assert.equal(off.changedBy, 'Sam')
+  assert.equal(ticketsEnabled(), false)
+  assert.equal(handoffEnabled(), true, '"Talk with a person" is its own switch')
+  setTicketsEnabled(false, sam)
+  setTicketsEnabled(true, sam)
+  assert.deepEqual(
+    auditRows().slice(-2).map((r) => r.action),
+    ['tickets.disabled', 'tickets.enabled'],
+  )
 })

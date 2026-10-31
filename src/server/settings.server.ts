@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { getRequest, getRequestIP } from '@tanstack/react-start/server'
-import { chatStatus } from './chat-availability.server.ts'
+import { chatStatus, handoffStatus, ticketsStatus } from './chat-availability.server.ts'
 import { getDb } from './db.server.ts'
 import { env } from './env.server.ts'
 import { clientIp } from './auth.server.ts'
@@ -24,7 +24,7 @@ type Member = { name: string; email: string }
 // underneath (shown as placeholders, and what "Reset" goes back to), and the
 // uploaded images.
 export function brandingSettings() {
-  const { branding, fileConfig, config, logo } = getSiteConfig()
+  const { branding, fileConfig, fileLogo, config, logo } = getSiteConfig()
   const image = (kind: BrandAssetKind, asset: StoredAsset | null) =>
     asset && { url: assetUrl(kind, asset), type: asset.type, width: asset.width, height: asset.height, updatedAt: asset.updatedAt, updatedBy: asset.updatedBy }
   return {
@@ -35,6 +35,9 @@ export function brandingSettings() {
       brandColor: fileConfig.theme.light.primary,
       // A support.config.json logo shows when nothing is uploaded.
       configLogo: Boolean(fileConfig.brand.logo),
+      // Its logos and fonts, for previews of changes that aren't saved yet.
+      fileLogo,
+      fonts: { sans: fileConfig.fonts.sans, serif: fileConfig.fonts.serif },
     },
     logo: image('logo', readAsset('logo')),
     logoDark: image('logo-dark', readAsset('logo-dark')),
@@ -70,6 +73,8 @@ export async function collectSettings({ recheck = false } = {}) {
   return {
     branding: brandingSettings(),
     chat: chatStatus(db),
+    handoff: handoffStatus(db),
+    tickets: ticketsStatus(db),
     ai: {
       connection,
       apiUrl: env.modelriverApiUrl,

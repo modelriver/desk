@@ -1,14 +1,15 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { createFileRoute, Link, redirect } from '@tanstack/react-router'
+import { useState, type ReactNode } from 'react'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { AppearanceSettings, SeoSettings } from '../../components/BrandingSettings.tsx'
 import { useServerFn } from '@tanstack/react-start'
-import { getMonthUsage, getSettings, sendTestEmail, setChatAvailability } from '../../functions/settings.ts'
+import { getMonthUsage, getSettings, sendTestEmail, setChatAvailability, setHandoffAvailability, setTicketAvailability } from '../../functions/settings.ts'
 import { testImageStorage } from '../../functions/media.ts'
 import { formatBytes } from '../../lib/media-core.ts'
 import { LoadError } from '../../components/LoadError.tsx'
 import { RefreshIcon } from '../../components/icons.tsx'
 import { Badge, Button, Notice, PageHeader, Section, Select, Switch } from '../../components/ui.tsx'
 import { RelativeTime } from '../../components/RelativeTime.tsx'
+import { TabBar } from '../../components/TabBar.tsx'
 import { cn } from '../../lib/cn.ts'
 import { BusyIcon } from '../../components/BusyIcon.tsx'
 import { errorMessage } from '../../lib/errors.ts'
@@ -77,7 +78,11 @@ function Settings() {
     <>
       <PageHeader title="Settings" description="How this help center looks, how it shows up in search, and how the install is set up. Only admins see this page." />
 
-      <TabBar tab={tab} />
+      <TabBar
+        label="Settings sections"
+        active={tab}
+        tabs={TABS.map((t) => ({ id: t.id, label: t.label, link: { to: '/dashboard/settings', search: t.id === 'general' ? {} : { tab: t.id } } }))}
+      />
 
       {tab === 'appearance' && <AppearanceSettings branding={s.branding} onChange={setBranding} />}
 
@@ -85,7 +90,14 @@ function Settings() {
 
       {tab === 'general' && (
         <div className="grid gap-5">
-          <ChatSwitch status={s.chat} onChange={(chat) => setData((d) => ({ ...d, chat }))} />
+          <ChatSwitches
+            chat={s.chat}
+            handoff={s.handoff}
+            onChat={(chat) => setData((d) => ({ ...d, chat }))}
+            onHandoff={(handoff) => setData((d) => ({ ...d, handoff }))}
+            tickets={s.tickets}
+            onTickets={(tickets) => setData((d) => ({ ...d, tickets }))}
+          />
           <Section title="AI connection">
             <div className="flex flex-wrap items-start gap-3 border-b border-border px-5 py-4">
               <span
@@ -236,58 +248,6 @@ function Settings() {
   )
 }
 
-
-// The tabs, with one underline that slides to the chosen tab. It's measured
-// after each render and placed without motion the first time, so it doesn't
-// fly in on page load. The chosen tab only changes colour, not weight, so
-// the labels never shift.
-function TabBar({ tab }: { tab: Tab }) {
-  const nav = useRef<HTMLElement>(null)
-  const [bar, setBar] = useState<{ left: number; width: number; moved: boolean } | null>(null)
-
-  useLayoutEffect(() => {
-    const place = () => {
-      const active = nav.current?.querySelector<HTMLElement>('[aria-selected="true"]')
-      if (!active) return
-      setBar((prev) => ({ left: active.offsetLeft, width: active.offsetWidth, moved: prev !== null }))
-    }
-    place()
-    // Web fonts and window size change the tabs' widths.
-    const observer = new ResizeObserver(place)
-    if (nav.current) observer.observe(nav.current)
-    return () => observer.disconnect()
-  }, [tab])
-
-  return (
-    <nav ref={nav} role="tablist" aria-label="Settings sections" className="relative -mx-1 mb-6 flex gap-1 overflow-x-auto border-b border-border px-1">
-      {TABS.map((t) => (
-        <Link
-          key={t.id}
-          to="/dashboard/settings"
-          search={t.id === 'general' ? {} : { tab: t.id }}
-          role="tab"
-          aria-selected={tab === t.id}
-          className={cn(
-            'shrink-0 px-3 py-2 text-sm whitespace-nowrap',
-            tab === t.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-            // Until the sliding underline is measured (the server-rendered page), the tab draws its own.
-            tab === t.id && !bar && 'shadow-[inset_0_-2px_0_var(--primary)]',
-          )}
-        >
-          {t.label}
-        </Link>
-      ))}
-      {bar && (
-        <span
-          aria-hidden="true"
-          data-motion={bar.moved ? '' : undefined}
-          className="tab-bar pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-primary"
-          style={{ width: bar.width, transform: `translateX(${bar.left}px)` }}
-        />
-      )}
-    </nav>
-  )
-}
 
 // One setting: what it is on the left (with the env variable that controls
 // it), its value on the right.
@@ -630,16 +590,98 @@ function EmailSection({ email, onSent }: { email: Data['email']; onSent: () => v
   )
 }
 
-// Turning the chat off and on for visitors, at once, without a restart.
-function ChatSwitch({ status, onChange }: { status: Data['chat']; onChange: (next: Data['chat']) => void }) {
-  const save = useServerFn(setChatAvailability)
+// Turning the chat, "Talk with a person" and new tickets off and on for
+// visitors, at once, without a restart.
+function ChatSwitches({
+  chat,
+  handoff,
+  tickets,
+  onChat,
+  onHandoff,
+  onTickets,
+}: {
+  chat: Data['chat']
+  handoff: Data['handoff']
+  tickets: Data['tickets']
+  onChat: (next: Data['chat']) => void
+  onHandoff: (next: Data['handoff']) => void
+  onTickets: (next: Data['tickets']) => void
+}) {
+  const saveChat = useServerFn(setChatAvailability)
+  const saveHandoff = useServerFn(setHandoffAvailability)
+  const saveTickets = useServerFn(setTicketAvailability)
+  return (
+    <Section title="Chat assistant">
+      <SwitchRow
+        id="chat-switch-label"
+        status={chat}
+        save={(enabled) => saveChat({ data: { enabled } })}
+        onChange={onChat}
+        title={chat.enabled ? 'Visitors can chat' : 'Chat is paused'}
+        description={
+          chat.enabled
+            ? 'Turn it off to hide the chat button everywhere, including the widget on other sites. Articles and search keep working.'
+            : 'The chat button and the home page’s question box are hidden, and new chats and messages are refused. Turn it back on any time.'
+        }
+        changed={chat.enabled ? 'Turned on' : 'Paused'}
+      />
+      <SwitchRow
+        id="handoff-switch-label"
+        status={handoff}
+        save={(enabled) => saveHandoff({ data: { enabled } })}
+        onChange={onHandoff}
+        title={handoff.enabled ? 'Visitors can talk with a person' : 'Talk with a person is off'}
+        description={
+          handoff.enabled
+            ? 'Visitors can ask for the team, and the chat waits for someone to join. Turn it off when no one is around to answer.'
+            : tickets.enabled
+              ? 'When visitors ask for a person, the assistant says no one is available right now and offers to raise a ticket, which shows under Tickets. Your team can still join any chat from the dashboard.'
+              : 'When visitors ask for a person, the assistant says no one is available right now. New tickets are off too, so it offers nothing else. Your team can still join any chat from the dashboard.'
+        }
+        changed={handoff.enabled ? 'Turned on' : 'Turned off'}
+      />
+      <SwitchRow
+        id="tickets-switch-label"
+        status={tickets}
+        save={(enabled) => saveTickets({ data: { enabled } })}
+        onChange={onTickets}
+        title={tickets.enabled ? 'Customers can raise tickets' : 'New tickets are off'}
+        description={
+          tickets.enabled
+            ? 'In the customer portal, and from the chat while Talk with a person is off. Turn it off to stop new tickets; customers can still reply to the ones they have.'
+            : 'No one can raise a new ticket from the chat or the customer portal. Customers can still read and reply to their tickets, and your team can still open tickets from the dashboard.'
+        }
+        changed={tickets.enabled ? 'Turned on' : 'Turned off'}
+      />
+    </Section>
+  )
+}
+
+function SwitchRow({
+  id,
+  status,
+  save,
+  onChange,
+  title,
+  description,
+  changed,
+}: {
+  id: string
+  status: Data['chat']
+  save: (enabled: boolean) => Promise<Data['chat']>
+  onChange: (next: Data['chat']) => void
+  title: string
+  description: string
+  // "Turned on", "Paused": shown before "by Sam 2 hours ago".
+  changed: string
+}) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const toggle = async (enabled: boolean) => {
     setBusy(true)
     setError(null)
     try {
-      onChange(await save({ data: { enabled } }))
+      onChange(await save(enabled))
     } catch (err) {
       setError(errorMessage(err, 'Couldn’t change it. Please try again.'))
     } finally {
@@ -647,30 +689,24 @@ function ChatSwitch({ status, onChange }: { status: Data['chat']; onChange: (nex
     }
   }
   return (
-    <Section title="Chat assistant">
-      <div className="flex items-start gap-4 px-5 py-4">
-        <div className="min-w-0 flex-1">
-          <p id="chat-switch-label" className="text-sm font-medium">
-            {status.enabled ? 'Visitors can chat' : 'Chat is paused'}
+    <div className="flex items-start gap-4 border-b border-border px-5 py-4 last:border-b-0">
+      <div className="min-w-0 flex-1">
+        <p id={id} className="text-sm font-medium">
+          {title}
+        </p>
+        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+        {status.changedAt && (
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {changed} by {status.changedBy ?? 'someone'} <RelativeTime iso={status.changedAt} />
           </p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {status.enabled
-              ? 'Turn it off to hide the chat button everywhere, including the widget on other sites. Articles and search keep working.'
-              : 'The chat button and the home page’s question box are hidden, and new chats and messages are refused. Turn it back on any time.'}
+        )}
+        {error && (
+          <p role="alert" className="mt-1.5 text-xs text-destructive">
+            {error}
           </p>
-          {status.changedAt && (
-            <p className="mt-1.5 text-xs text-muted-foreground">
-              {status.enabled ? 'Turned on' : 'Paused'} by {status.changedBy ?? 'someone'} <RelativeTime iso={status.changedAt} />
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="mt-1.5 text-xs text-destructive">
-              {error}
-            </p>
-          )}
-        </div>
-        <Switch checked={status.enabled} onChange={(on) => void toggle(on)} disabled={busy} aria-labelledby="chat-switch-label" className="mt-0.5" />
+        )}
       </div>
-    </Section>
+      <Switch checked={status.enabled} onChange={(on) => void toggle(on)} disabled={busy} aria-labelledby={id} className="mt-0.5" />
+    </div>
   )
 }

@@ -3,7 +3,7 @@ import { asObject } from './validate.ts'
 import { requireUser } from '../server/auth.server.ts'
 import { allowAll } from '../server/rate-limit.server.ts'
 import { collectSettings } from '../server/settings.server.ts'
-import { setChatEnabled } from '../server/chat-availability.server.ts'
+import { setChatEnabled, setHandoffEnabled, setTicketsEnabled } from '../server/chat-availability.server.ts'
 import { sendEmail } from '../server/email.server.ts'
 import { currentMonth, monthUsage, MONTH_PATTERN } from '../server/usage.server.ts'
 
@@ -57,4 +57,28 @@ export const setChatAvailability = createServerFn({ method: 'POST' })
   .handler(({ data }) => {
     const me = requireUser('admin')
     return setChatEnabled(data.enabled, me)
+  })
+
+// Admins only: whether visitors can ask for a person, or raise a ticket instead.
+export const setHandoffAvailability = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    const { enabled } = asObject(input)
+    if (typeof enabled !== 'boolean') throw new Error('enabled is invalid.')
+    return { enabled }
+  })
+  .handler(({ data }) => {
+    const me = requireUser('admin')
+    return setHandoffEnabled(data.enabled, me)
+  })
+
+// Admins only: whether visitors and customers can raise new tickets.
+export const setTicketAvailability = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    const { enabled } = asObject(input)
+    if (typeof enabled !== 'boolean') throw new Error('enabled is invalid.')
+    return { enabled }
+  })
+  .handler(({ data }) => {
+    const me = requireUser('admin')
+    return setTicketsEnabled(data.enabled, me)
   })

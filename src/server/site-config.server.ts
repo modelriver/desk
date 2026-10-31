@@ -1,6 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { parseSiteConfig, SiteConfigError, themeCss, type Logo, type SiteConfig } from '../lib/site-config.ts'
+import { parseSiteConfig, resolveLogo, SiteConfigError, themeCss, type Logo, type SiteConfig } from '../lib/site-config.ts'
+
+// Shared with Settings, which previews a logo before it's saved.
+export { resolveLogo }
 import { applyBranding, type Branding } from '../lib/branding.ts'
 import { faviconSvg } from '../lib/favicon.ts'
 import { assetUrl, brandingVersion, readAsset, readBranding } from './branding.server.ts'
@@ -55,6 +58,8 @@ export interface ResolvedSiteConfig {
   config: SiteConfig
   // support.config.json alone, for "Reset" and the Settings form's placeholders.
   fileConfig: SiteConfig
+  // Its logos, which show again when an uploaded one is removed.
+  fileLogo: Logo
   branding: Branding
   css: string
   logo: Logo
@@ -64,20 +69,12 @@ export interface ResolvedSiteConfig {
   showName: boolean
   // The home page's title and description from Settings, or null for the defaults.
   seo: { homeTitle: string | null; description: string | null }
+  // The home page's hero text from Settings, or null for HOME_DEFAULTS.
+  home: { heading: string | null; intro: string | null; example: string | null }
 }
 
 let cached: { version: number; value: ResolvedSiteConfig } | undefined
 let fileCache: { config: SiteConfig; logo: Logo } | undefined
-
-// The header logo for each colour scheme. An uploaded logo replaces
-// support.config.json's (and its dark version, which was made to match it);
-// an uploaded dark-mode logo is used over whichever light one shows. A dark
-// logo alone has nothing to pair with, so the Desk bot stays.
-export function resolveLogo(uploaded: string | null, uploadedDark: string | null, fromFile: Logo): Logo {
-  if (uploaded) return { light: uploaded, dark: uploadedDark }
-  if (fromFile) return { light: fromFile.light, dark: uploadedDark ?? fromFile.dark }
-  return null
-}
 
 // support.config.json is read once per process (restart to pick up changes);
 // what Settings saves applies at once.
@@ -102,6 +99,7 @@ export function getSiteConfig(): ResolvedSiteConfig {
   const value: ResolvedSiteConfig = {
     config,
     fileConfig: fileCache.config,
+    fileLogo: fileCache.logo,
     branding,
     css: themeCss(config),
     logo,
@@ -115,6 +113,7 @@ export function getSiteConfig(): ResolvedSiteConfig {
     // Hiding the name needs a logo to take its place; with the Desk bot it always shows.
     showName: branding.showName !== false || logo === null,
     seo: { homeTitle: branding.homeTitle ?? null, description: branding.description ?? null },
+    home: { heading: branding.homeHeading ?? null, intro: branding.homeIntro ?? null, example: branding.askExample ?? null },
   }
   cached = { version, value }
   return value

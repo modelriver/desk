@@ -175,6 +175,20 @@ function Notifications({ account, isAdmin, onSaved }: { account: Account; isAdmi
         disabled={busy}
         onChange={(v) => void update({ ...account.notifications, newConversations: v })}
       />
+      <ToggleRow
+        title="Tickets assigned to you"
+        detail="When someone assigns you a ticket, and when the customer replies on one of yours."
+        checked={account.notifications.myTickets}
+        disabled={busy}
+        onChange={(v) => void update({ ...account.notifications, myTickets: v })}
+      />
+      <ToggleRow
+        title="Every new ticket"
+        detail="When a visitor or customer raises one, and when a customer replies on a ticket nobody has yet."
+        checked={account.notifications.newTickets}
+        disabled={busy}
+        onChange={(v) => void update({ ...account.notifications, newTickets: v })}
+      />
       {error && (
         <div className="px-5 py-3">
           <Notice tone="error">{error}</Notice>

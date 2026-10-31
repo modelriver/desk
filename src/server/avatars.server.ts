@@ -39,6 +39,18 @@ export function avatarOf(userId: string, db: DatabaseSync = getDb()): string | n
   return row ? avatarUrl(row.hash) : null
 }
 
+// Pictures for the team members with these ids (who sent a ticket's replies).
+export function avatarsByUser(ids: Iterable<string>, db: DatabaseSync = getDb()): Map<string, string> {
+  const wanted = [...new Set(ids)].filter(Boolean)
+  const out = new Map<string, string>()
+  if (!wanted.length) return out
+  const rows = db
+    .prepare(`SELECT user_id, hash FROM user_avatars WHERE user_id IN (${wanted.map(() => '?').join(', ')})`)
+    .all(...wanted) as Array<{ user_id: string; hash: string }>
+  for (const r of rows) out.set(r.user_id, avatarUrl(r.hash))
+  return out
+}
+
 // Pictures for the names on a conversation's team replies (ModelRiver keeps
 // the name with each message, not who sent it). A name two people share gets
 // no picture rather than the wrong one.

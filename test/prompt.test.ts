@@ -27,6 +27,26 @@ test('private chunks never get a citation marker or become a source', () => {
   assert.deepEqual(sources, [])
 })
 
+test('with "Talk with a person" off, the assistant offers a message instead of the team', () => {
+  const on = buildContextMessage([publicChunk]).content
+  const off = buildContextMessage([publicChunk], { handoff: false }).content
+  assert.match(on, /passing the chat to the team/)
+  assert.doesNotMatch(off, /passing the chat to the team|connect the user with the team/)
+  assert.match(off, /no one is available to chat at the moment/)
+  assert.match(off, /raise a ticket with the form below the chat/)
+  // The widget still needs the marker to open the leave-a-message card.
+  assert.match(off, /\[\[handoff\]\]/)
+})
+
+test('with new tickets off too, the assistant offers neither the team nor a ticket', () => {
+  const content = buildContextMessage([publicChunk], { handoff: false, tickets: false }).content
+  assert.match(content, /no one is available at the moment/)
+  assert.match(content, /suggest browsing the help articles/)
+  assert.doesNotMatch(content, /raise a ticket|form below the chat|connect the user with the team/)
+  // No marker: nothing should open the ticket card.
+  assert.match(content, /Never use \[\[handoff\]\]\./)
+})
+
 test('linkCitations links known public slugs and drops unknown ones', () => {
   const known = new Map([['billing', { slug: 'billing', path: 'account/billing', title: 'Billing' }]])
   assert.equal(linkCitations('See [[billing]].', known), 'See [Billing](/articles/account/billing).')

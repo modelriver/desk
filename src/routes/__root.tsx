@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import type { ReactNode } from 'react'
 import { createRootRoute, HeadContent, Link, Outlet, Scripts, useRouterState } from '@tanstack/react-router'
-import { ChatWidget } from '../components/ChatWidget.tsx'
+import { CHAT_PAGE, ChatWidget } from '../components/ChatWidget.tsx'
 import { BrandMark } from '../components/BrandMark.tsx'
 import { LOGO_HEIGHT, PHONE_LOGO_HEIGHT } from '../lib/brand-assets.ts'
 import { HeaderSearch } from '../components/HeaderSearch.tsx'
@@ -66,7 +66,7 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function RootLayout() {
-  const { repoUrl, brandName, logo, showName, chatEnabled } = Route.useLoaderData()
+  const { repoUrl, brandName, logo, showName, chatEnabled, customerPortal } = Route.useLoaderData()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // The dashboard, sign-in and the embeddable /widget page have their own chrome.
   const publicPage = !pathname.startsWith('/dashboard') && pathname !== '/login' && pathname !== '/widget'
@@ -90,6 +90,17 @@ function RootLayout() {
             >
               Articles
             </Link>
+            {customerPortal && (
+              <Link
+                to="/customer-portal"
+                className="rounded-md px-3 py-1.5 whitespace-nowrap text-muted-foreground hover:text-foreground"
+                activeProps={{ className: 'text-foreground' }}
+              >
+                {/* Short on phones, so the brand name keeps its room. */}
+                <span className="sm:hidden">Tickets</span>
+                <span className="hidden sm:inline">Your tickets</span>
+              </Link>
+            )}
             {/* No sign-in link for visitors; the team signs in at /login (or /dashboard). */}
           </nav>
         </div>
@@ -105,8 +116,8 @@ function RootLayout() {
           </a>
         </div>
       </footer>
-      {/* Paused from Settings: no chat button at all. */}
-      {chatEnabled && <ChatWidget repoUrl={repoUrl} brandName={brandName} />}
+      {/* Paused from Settings: no chat button at all. On /chat the page is the chat. */}
+      {chatEnabled && pathname !== CHAT_PAGE && <ChatWidget repoUrl={repoUrl} brandName={brandName} />}
     </div>
   )
 }

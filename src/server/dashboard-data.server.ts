@@ -29,6 +29,18 @@ type Local = {
   handledBy: Handler | null
 }
 
+// Conversations waiting for a person, by session, with when they asked. Read on
+// every inbox poll, so it only touches the few waiting rows (conversations_waiting index).
+export function waitingSessions(): Map<string, string> {
+  const rows = getDb()
+    .prepare(
+      `SELECT modelriver_session_id AS session_id, handoff_requested_at AS since FROM conversations
+       WHERE handoff_requested_at IS NOT NULL AND ended_at IS NULL AND modelriver_session_id IS NOT NULL`,
+    )
+    .all() as Array<{ session_id: string; since: string }>
+  return new Map(rows.map((r) => [r.session_id, r.since]))
+}
+
 export function localBySession(sessionIds: string[]) {
   if (!sessionIds.length) return new Map<string, Local>()
   const rows = getDb()

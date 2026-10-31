@@ -40,6 +40,9 @@ export const env = {
   emailProvider: emailProviderEnv(),
   // Sender, e.g. "Acme Support <support@acme.com>", on a domain your provider has verified.
   emailFrom: (process.env.EMAIL_FROM ?? '').trim(),
+  // Where customers' replies to ticket emails go (a mailbox your team reads).
+  // Unset: replies go to EMAIL_FROM.
+  supportReplyTo: (process.env.SUPPORT_REPLY_TO ?? '').trim(),
   // The address people use to reach this app, for links in emails, e.g. https://support.acme.com
   appUrl: (process.env.APP_URL ?? '').trim().replace(/\/+$/, ''),
   // How long a visitor's proved email counts, in hours (0 = until the

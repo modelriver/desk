@@ -1,7 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
-import { chatEnabled } from '../server/chat-availability.server.ts'
+import { chatEnabled, handoffEnabled, ticketsEnabled } from '../server/chat-availability.server.ts'
 import { asObject, str } from './validate.ts'
 import { helpIndex, helpPage, homePage, quickSearch, voteOnArticle } from '../server/help.server.ts'
+import { emailStatus } from '../server/email.server.ts'
 import { env } from '../server/env.server.ts'
 import { siteUrl } from '../server/seo.server.ts'
 import { getSiteConfig as readSiteConfig } from '../server/site-config.server.ts'
@@ -43,7 +44,7 @@ export const voteArticle = createServerFn({ method: 'POST' })
 
 // Everything the root layout needs from support.config.json and env.
 export const getSiteConfig = createServerFn({ method: 'GET' }).handler(async () => {
-  const { config, css, logo, favicon, showName, seo } = readSiteConfig()
+  const { config, css, logo, favicon, showName, seo, home } = readSiteConfig()
   return {
     repoUrl: env.publicRepoUrl,
     brandName: config.brand.name,
@@ -51,6 +52,8 @@ export const getSiteConfig = createServerFn({ method: 'GET' }).handler(async () 
     showName,
     // The home page's title and description from Settings (null for the defaults).
     seo,
+    // The home page's hero text from Settings (null for the defaults).
+    home,
     favicon,
     // For canonical links and structured data (see siteUrl).
     siteUrl: siteUrl(),
@@ -61,5 +64,11 @@ export const getSiteConfig = createServerFn({ method: 'GET' }).handler(async () 
     fontStylesheets: config.fonts.stylesheets,
     // Paused from Settings: the chat button and the ways into it are hidden.
     chatEnabled: chatEnabled(),
+    // "Talk with a person" off: the home page's default line offers a message instead.
+    teamCanJoin: handoffEnabled(),
+    // New tickets off: nothing offers to raise one.
+    ticketsOpen: ticketsEnabled(),
+    // Customers sign in to /customer-portal with an email code, so it's only linked when email works.
+    customerPortal: emailStatus().ready,
   }
 })

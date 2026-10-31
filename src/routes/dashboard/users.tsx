@@ -6,6 +6,7 @@ import { CopyIcon, KeyIcon, PlusIcon, ShieldIcon, TrashIcon } from '../../compon
 import { ActionsMenu } from '../../components/ActionsMenu.tsx'
 import { Button, Input, Notice, PageHeader } from '../../components/ui.tsx'
 import { AddMemberDialog } from '../../components/AddMemberDialog.tsx'
+import { ConfirmDialog } from '../../components/DataDialogs.tsx'
 import { errorMessage } from '../../lib/errors.ts'
 import { initials } from '../../lib/initials.ts'
 
@@ -30,6 +31,8 @@ function UsersPage() {
   const [editing, setEditing] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
+  // The removal or two-factor reset waiting for a yes, and whose.
+  const [confirming, setConfirming] = useState<{ action: 'remove' | 'reset-2fa'; id: string; name: string; email: string } | null>(null)
 
   const run = async (fn: () => Promise<string>) => {
     setBusy(true)
@@ -60,6 +63,33 @@ function UsersPage() {
       />
 
       <AddMemberDialog open={adding} onClose={() => setAdding(false)} onAdded={() => void router.invalidate()} />
+
+      <ConfirmDialog
+        open={confirming !== null}
+        title={confirming?.action === 'remove' ? `Remove ${confirming.name} from the team?` : `Reset two-factor for ${confirming?.name ?? ''}?`}
+        confirmLabel={confirming?.action === 'remove' ? 'Remove from team' : 'Reset two-factor'}
+        icon={confirming?.action === 'remove' ? <TrashIcon size={18} /> : <ShieldIcon size={18} />}
+        busy={busy}
+        onClose={() => setConfirming(null)}
+        onConfirm={() => {
+          const c = confirming
+          if (!c) return
+          void run(async () =>
+            c.action === 'remove'
+              ? (await remove({ data: { id: c.id } }), `Removed ${c.name}.`)
+              : (await resetTwoFactor({ data: { id: c.id } }), `Two-factor reset for ${c.name}. They’ll set it up at their next sign-in.`),
+          ).finally(() => setConfirming(null))
+        }}
+      >
+        {confirming?.action === 'remove' ? (
+          <>
+            <span className="font-medium text-foreground">{confirming.email}</span> is signed out at once and can’t sign in again. Conversations
+            they handled are freed for the rest of the team.
+          </>
+        ) : (
+          'They’re signed out now and set up an authenticator app again at their next sign-in. Use this when they’ve lost their phone.'
+        )}
+      </ConfirmDialog>
 
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="flex items-baseline gap-2 text-sm font-medium">
@@ -119,20 +149,7 @@ function UsersPage() {
                                   label: 'Reset two-factor',
                                   icon: <ShieldIcon size={15} />,
                                   disabled: busy,
-                                  onSelect: () => {
-                                    if (
-                                      confirm(
-                                        `Reset two-factor authentication for ${u.name}? They’re signed out now and set it up again at their next sign-in.`,
-                                      )
-                                    ) {
-                                      void run(
-                                        async () => (
-                                          await resetTwoFactor({ data: { id: u.id } }),
-                                          `Two-factor reset for ${u.name}. They’ll set it up at their next sign-in.`
-                                        ),
-                                      )
-                                    }
-                                  },
+                                  onSelect: () => setConfirming({ action: 'reset-2fa', id: u.id, name: u.name, email: u.email }),
                                 },
                               ]
                             : []),
@@ -142,11 +159,7 @@ function UsersPage() {
                             icon: <TrashIcon size={15} />,
                             destructive: true,
                             disabled: busy,
-                            onSelect: () => {
-                              if (confirm(`Remove ${u.name} (${u.email})? They are signed out immediately.`)) {
-                                void run(async () => (await remove({ data: { id: u.id } }), `Removed ${u.name}.`))
-                              }
-                            },
+                            onSelect: () => setConfirming({ action: 'remove', id: u.id, name: u.name, email: u.email }),
                           },
                         ]),
                   ]}

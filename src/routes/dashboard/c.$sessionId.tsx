@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
 import { agentReply, archiveConversation, getTranscript, liveTranscript, restoreConversation, setConversationMode } from '../../functions/dashboard.ts'
 import { Markdown } from '../../components/Markdown.tsx'
@@ -15,6 +15,7 @@ import { HandlerBadge } from '../../components/ConversationList.tsx'
 import { Tooltip } from '../../components/Tooltip.tsx'
 import { CONVERSATION_UPDATED, LIVE_SAFETY_REFRESH_MS } from '../../lib/live.ts'
 import { BusyIcon } from '../../components/BusyIcon.tsx'
+import { NewTicketDialog } from '../../components/NewTicketDialog.tsx'
 import { errorMessage } from '../../lib/errors.ts'
 
 export const Route = createFileRoute('/dashboard/c/$sessionId')({
@@ -35,6 +36,9 @@ function Transcript() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmArchive, setConfirmArchive] = useState(false)
+  // "Create ticket": for a follow-up by email, after the chat.
+  const [ticketing, setTicketing] = useState(false)
+  const navigate = useNavigate()
   const cancelArchive = useCallback(() => setConfirmArchive(false), [])
   const end = useRef<HTMLDivElement>(null)
   const known = useMemo(() => new Map(t.articles.map((a) => [a.slug, a])), [t.articles])
@@ -117,6 +121,16 @@ function Transcript() {
 
   return (
     <div className="flex min-h-[calc(100dvh-4rem)] flex-col">
+      <NewTicketDialog
+        open={ticketing}
+        onClose={() => setTicketing(false)}
+        fromChat={{
+          sessionId: t.sessionId,
+          visitorName: t.visitorName,
+          lastMessage: t.messages.findLast((m) => m.author === 'user')?.content ?? '',
+        }}
+        onCreated={(ref) => void navigate({ to: '/dashboard/tickets/$ticketRef', params: { ticketRef: ref } })}
+      />
       <Link to="/dashboard" className="inline-flex w-fit items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground">
         <ArrowLeftIcon size={14} />
         Conversations
@@ -197,6 +211,11 @@ function Transcript() {
                 Take over
               </Button>
             ))}
+          {!fromApi && (
+            <Button variant="outline" disabled={busy} onClick={() => setTicketing(true)}>
+              Create ticket
+            </Button>
+          )}
           {!archived && (
             <ConfirmPopover
               open={confirmArchive}

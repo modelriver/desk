@@ -4,11 +4,14 @@
 
 A small, self-hostable support app:
 
-- **Chat widget.** Visitors ask questions and AI answers stream in token by token over websockets. Answers link to the help-center articles they draw on.
+- **Chat widget.** Visitors ask questions and AI answers stream in token by token over websockets. Answers link to the help-center articles they draw on. The expand button in its header opens the same conversation full page at `/chat`, and collapse brings it back.
 - **Help center.** Public Markdown articles rendered as pages.
 - **Integrations.** Optional, read-only connectors for **Shopify**, **Stripe**, **Cal.com** and your own API (**Custom HTTP**). Once a visitor proves their email, the AI can answer "where's my order?", "when does my plan renew?" or "when is my appointment?" from their own records. See [Integrations](#integrations).
 - **Team dashboard.** Sign in, read every conversation, take over from the AI and reply as a human, manage users (admin/agent) and upload data files. Admins also get a **Settings** page to change the logo, colours, fonts, page titles, description and favicon, and showing whether the AI is connected, how much of the AI budget is used, who hasn't set up two-factor, whether the proxy settings look right, and where each setting comes from.
+- **Tickets.** Requests your team answers by email: messages visitors leave when no one is available, chats turned into tickets, and ones you open yourself. Replies, internal notes, an assignee and a status, with an AI-drafted reply from your help articles to start from. Customers follow and answer their tickets in a **customer portal** at `/customer-portal`, signing in with an email code. See [Tickets](#tickets).
 - **Pause the chat.** **Settings → Chat assistant** turns the chat off for visitors at once, with no restart: the chat button, the home page's question box and the articles' "Still stuck?" box disappear, the embeddable `/widget` shows a short "Chat is paused" note with a link to the articles, and new chats and messages are refused. Articles and search keep working. Who changed it, and when, shows there and in the admin audit log.
+- **Turn off "Talk with a person".** The switch under it is for when no one is around to answer: visitors who ask for the team are told no one is available right now and can raise a ticket instead. See [When no one is available](#when-no-one-is-available).
+- **Stop new tickets.** **Customers can raise tickets**, the third switch, turns off raising tickets from the chat and the [customer portal](#customer-portal) at once. Customers can still read and reply to the tickets they have, and your team can still open tickets from the dashboard.
 
 ![The Desk dashboard and a visitor's chat showing the same reply](https://cdn.modelriver.com/assets/docs/desk-live-light.webp)
 
@@ -28,6 +31,30 @@ npm run create-admin
 ```
 
 Before the first run, in the ModelRiver console, import [`examples/support_assistant.workflow.json`](examples/support_assistant.workflow.json) with **Import workflows**, and make sure it's published Live. It is a chat workflow named `support_assistant` with **Sessions** on and the prompt from [`examples/workflow-system-prompt.md`](examples/workflow-system-prompt.md). It answers with Anthropic `claude-haiku-5-5` and falls back to OpenAI `gpt-6-luna`, so the assistant keeps answering if one provider is down. Change either model to one your project has a key for. To use a different name, set `MODELRIVER_WORKFLOW`.
+
+### Set up email (recommended)
+
+Desk runs without email, but several features need it:
+
+| Needs email | Without it |
+| --- | --- |
+| [Raising a ticket](#when-no-one-is-available) from the chat | No code can confirm the visitor's address, so the ticket has no email and your team can only answer in the chat |
+| [Replying to tickets](#tickets) | Only internal notes work |
+| [Customer portal](#customer-portal) sign-in | Customers can't get a code, so they can't sign in or raise tickets there |
+| [Account lookups](#integrations) (Shopify, Stripe, Cal.com, your API) | Only visitors signed in on your site, with an [identity token](#identity-tokens-signed-in-visitors), can be looked up |
+| [Team notifications](#email-notifications) | Nobody hears about new tickets or people waiting unless they're watching the dashboard |
+
+Set a provider, its key and the addresses in `.env`, then restart:
+
+```bash
+EMAIL_PROVIDER=resend                  # or postmark, or ses
+RESEND_API_KEY=re_…
+EMAIL_FROM="Acme Support <support@acme.com>"   # on a domain the provider has verified
+SUPPORT_REPLY_TO=support@acme.com      # a mailbox your team reads: customers' replies to tickets go here
+APP_URL=https://support.acme.com       # for links in emails
+```
+
+In development, `EMAIL_PROVIDER=log` prints every email (codes included) to the terminal instead of sending it. Check the setup with **Settings → Send a test email**. All the providers and their settings are under [Email notifications](#email-notifications).
 
 Then start it:
 
@@ -153,14 +180,67 @@ The request shows up in the dashboard straight away. [Email notifications](#emai
 
 **One person per conversation.** **Take over**, or a reply, makes you the one handling the conversation. Your name shows on its row in **Conversations** and on the transcript, as **You** for yourself. Colleagues see who has it, and their reply box is replaced by **Take over from Sam**, so two people never answer the same visitor. **Hand back to AI**, or the visitor going back to the AI, frees the conversation. Removing a team member frees theirs too.
 
+### When no one is available
+
+**Settings → Chat assistant → Talk with a person** turns handoffs off, at once and with no restart (on by default):
+
+- **What the visitor sees.** Asking for a person (in any wording) gets a short reply from the assistant saying no one from the team is available to chat right now, and a **Raise a ticket** card opens above the message box: what they need, plus their email, which they confirm with a 6-digit code sent to it, since the team replies by email. A typed address could be anyone's, so an unconfirmed one is never used; a visitor who verified their email in the chat (or is signed in on your site) raises it straight away. Code emails have the same limits as for [account lookups](#verification-rules). Once raised, they see the ticket's reference. Without email set up on the server there's no code to send: the ticket is raised without an address, and the team can only answer in the chat. The same card is in the chat's **⋯** menu, in place of **Talk to a person**. The AI keeps answering questions as usual.
+- **What the team sees.** Each message becomes a [ticket](#tickets) under **Tickets**, with the visitor's name, their email (marked **Verified** when they proved it) and a link to the chat it came from. The visitor is told its number. The sidebar counts open tickets, and people with the **Someone wants a person** email get one for each.
+- **The team can still join.** Turning it off only stops visitors from asking. Anyone on the team can still open a conversation and **Take over** from the dashboard, and chats already waiting for a person stay waiting.
+- **When the AI can't answer** while it's off, the chat isn't passed to the team (no one is coming): the visitor is asked to try again or raise a ticket.
+
+### Tickets
+
+**Tickets** in the dashboard holds requests your team answers by email, on their own time. They come from three places: a visitor raises one from the chat while **Talk with a person** is off, a team member turns a chat into one (**Create ticket** on the conversation), or someone opens one by hand (**New ticket**, for a call or an email).
+
+- **A reference, and tracked.** Each ticket has a random reference like #K7F3Q9 (six characters, none of them easy to misread, and saying nothing about how many tickets there are), a subject, the customer, an assignee and a status: **Open** (needs the team), **Waiting on customer** or **Solved**. The list has a tab for each status, oldest open ticket first, and filters for **Me** and **Nobody**.
+- **Replies go by email.** **Reply to customer** sends the reply from `EMAIL_FROM`, signed with your name, with the ticket's reference in the subject and the customer's message quoted underneath. The email has a **View ticket and reply** link that opens the ticket in the [customer portal](#customer-portal), already signed in. A customer who answers the email instead reaches `SUPPORT_REPLY_TO` (a mailbox your team reads), or `EMAIL_FROM` without it. After sending, the ticket waits on the customer, or is solved, as you choose. A reply that couldn't be sent is kept on the ticket, marked, and Desk tries it again on its own (see [Email notifications](#email-notifications)); **Send again** sends it straight away. A reply when nobody has the ticket makes it yours.
+- **Internal notes.** Only the team sees them, and they're never sent to the AI.
+- **AI-drafted replies.** **Draft with AI** writes a reply from your help articles and private notes, using the customer's message and the replies so far. It links articles when `APP_URL` is set, and puts **[add details]** where it doesn't know something instead of guessing. You edit it before sending; nothing goes out on its own. Each draft is one model request: it counts towards the site-wide AI limits (and your ModelRiver plan), and each team member can ask for 30 an hour. ModelRiver starts a session for every request to a workflow with session memory, so Desk deletes a draft's session straight away and keeps it out of the inbox (the hourly cleanup retries any it couldn't delete).
+- **History.** Everything that happens (the message, replies, notes, status and assignee changes) is listed on the ticket with who did it and when.
+- **Kept for 90 days after solving.** Solved tickets are deleted 90 days after they were solved, with their history. Admins can delete one sooner.
+- **Subjects to pick from.** Under **Tickets → Subjects**, admins list what customers usually write about (up to 20, like "Billing" or "My order"), in the order shown. Customers then pick one when they raise a ticket, in the chat or the portal, and it becomes the ticket's subject; **Something else** is always there too (their own subject in the portal, the start of their message in the chat). With no subjects, the portal asks for a subject and the chat takes one from the message.
+- **The customer gets a confirmation.** When a visitor or customer raises a ticket with a proved email, they're emailed its reference and a link that opens it in the [customer portal](#customer-portal). Not for tickets your team opens.
+- **One thread in the customer's inbox.** The confirmation and every reply carry the same `In-Reply-To` and `References` headers, and the same subject (replies add "Re:"), so mail apps keep a ticket's emails together.
+- **Customers reply in the portal.** A reply there is added to the ticket and opens it again. Replies sent by email instead land in your `SUPPORT_REPLY_TO` mailbox; set the ticket back to **Open** when one arrives. Receiving those into Desk is on the [roadmap](#roadmap).
+- **Where it came from.** Each ticket says whether it was raised in the chat, in the customer portal or by the team.
+
+#### Customer portal
+
+`/customer-portal` is where customers see the tickets raised with their email address, read your replies, answer them and raise new ones. There's no password or account: they sign in with a 6-digit code sent to their email. The help center's header links to it as **Your tickets** once [email is set up](#set-up-email-recommended) (without email nobody could sign in, so the link is hidden).
+
+- **From a reply email.** The **View ticket and reply** link signs them in and opens that ticket. It works for 30 days, for that ticket's address only, and is taken out of the address bar once used. Like any sign-in link, whoever has the email can use it.
+- **Otherwise.** Opening the portal, or a link that's expired, asks for their email and a code. The answer is the same whether or not the address has tickets, so nobody can use it to find out who your customers are.
+- **What they see.** Their own tickets only: the subject, reference, status (**We're on it**, **Waiting for your reply** or **Solved**), their messages and the replies sent to them. Never internal notes, who it's assigned to, or other customers' tickets; a ticket for another address shows "This ticket isn't on your account".
+- **Raising a ticket there.** The address is already proved by the code, so the ticket is marked **Verified**. Each address can raise 5 tickets a day, in the portal and the chat together. With **Customers can raise tickets** off in Settings, the button is hidden and the page says new tickets aren't being taken.
+- **Signed in for 14 days**, in the `desk_customer` cookie (see [Cookies](#cookies)). **Sign out** ends it on the server too.
+- **Needs email.** Without [email set up](#set-up-email-recommended) no code can be sent, so customers can only open tickets from links, and there are none without email either.
+
+#### Blocking a customer
+
+For someone abusing the form or the portal, **Block this customer** on a ticket (or **Tickets → Blocked customers**, where you can also block an address that has no ticket, with an optional reason) stops that email address at once:
+
+- No sign-in codes, chat verification codes or ticket links work for it, and any portal session is ended.
+- It can't raise tickets (in the portal or the chat) or reply.
+- They aren't told: a code request looks sent, and raising a ticket says it can't be raised from that address right now.
+- Your team can still reply to its tickets by email.
+
+**Unblock** on the same page undoes it. Both are in the admin audit log. Admins and agents can block and unblock. A block is per address, so it doesn't stop someone using another email: the [rate limits](#built-in-limits) cover that.
+
 ### Email notifications
+
+Email is [recommended](#set-up-email-recommended): tickets, email verification and these notifications all need it.
 
 Each team member chooses their own emails under **Account settings** (in the menu with their name):
 
 - **Someone wants a person**, on by default: a visitor asked for the team, or the AI couldn't answer and passed the chat on. Sent once per wait, not for each message.
 - **Every new conversation**, off by default: once when a conversation starts, with the visitor's first question.
+- **Tickets assigned to you**, on by default: when someone else assigns you a ticket, and when the customer replies on one of yours in the portal.
+- **Every new ticket**, off by default (on after updating for anyone who had **Someone wants a person** on, which used to cover tickets): when a visitor or customer raises one, and when a customer replies on a ticket nobody has yet.
 
-To keep inboxes calm, updates that arrive within about 15 seconds come as one email, and each person gets at most 20 an hour. Emails include the visitor's message (up to 280 characters), so it passes through your email provider.
+Nobody is emailed about something they did themselves, like assigning a ticket to themselves. To keep inboxes calm, updates that arrive within about 15 seconds come as one email, and each person gets at most 20 an hour. Emails include the visitor's message (up to 280 characters), so it passes through your email provider.
+
+**If an email can't be sent** (the provider is down, say), Desk keeps it and tries again after 1, 5, 15 and 30 minutes, then 1, 2, 4 and 8 hours, about 16 hours in all, before giving up. That covers ticket replies, confirmations and team notifications, and survives a restart. Sign-in and verification codes aren't retried: they expire in 10 minutes, so the person asks for a new one. "Sent" means the provider accepted the email; Desk doesn't track bounces yet.
 
 Turn email on with environment variables. Every provider is a plain HTTPS call (no SDK), behind one small interface in [`src/server/email.server.ts`](src/server/email.server.ts), so adding another means writing one function:
 
@@ -171,7 +251,7 @@ Turn email on with environment variables. Every provider is a plain HTTPS call (
 | `ses` | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (and `AWS_SESSION_TOKEN` for temporary credentials). Requests are signed with AWS Signature Version 4 in [`src/server/aws-sigv4.server.ts`](src/server/aws-sigv4.server.ts) |
 | `log` | Nothing: emails are printed to the server log, for development |
 
-All of them need `EMAIL_FROM` (a sender on a domain your provider has verified), and `APP_URL` (the address people use to open this app) so emails can link to the conversation. Admins can check the setup and **Send a test email** under **Settings**.
+All of them need `EMAIL_FROM` (a sender on a domain your provider has verified), and `APP_URL` (the address people use to open this app) so emails can link to the conversation. Admins can check the setup and **Send a test email** under **Settings**. For [tickets](#tickets), set `SUPPORT_REPLY_TO` to the mailbox customers' replies should go to.
 
 ### Archiving
 
@@ -355,6 +435,7 @@ The app uses only functional cookies; there's no tracking or analytics.
 | `desk_pending` | Widget | The answer being streamed (channel ID, question, start time), so a refresh can resume it | 5 minutes, removed when the answer finishes |
 | `desk_session` | Server, `HttpOnly` | A team member's sign-in, created only after the two-factor step | 14 days |
 | `desk_2fa` | Server, `HttpOnly` | A sign-in that passed the password step and is waiting for its code | 10 minutes, removed once finished |
+| `desk_customer` | Server, `HttpOnly`, `SameSite=Lax` | A customer's [customer portal](#customer-portal) sign-in (a random token, stored hashed) | 14 days, removed on **Sign out** |
 
 - **After a refresh.** The widget reopens if it was open, reloads the conversation, and rejoins an answer that was still streaming. If the answer already finished, it shows it from the session history.
 - **Clearing cookies.** This or switching browsers starts a new conversation. The old one stays in the dashboard.
@@ -366,9 +447,10 @@ The app uses only functional cookies; there's no tracking or analytics.
 The quickest way is **Settings** in the dashboard, which applies at once with no restart:
 
 - **Appearance:** the header logo (SVG preferred, shown 26 px tall, or a PNG at least 52 px tall) and an optional dark-mode version, an option to hide the name beside it, one brand colour (buttons, links and highlights in light and dark mode), the body and heading fonts (from a short list on Google Fonts) and the corner style.
+- **Home page:** the heading, the line under it and the example question in the question box (Appearance tab). Leave one blank to keep Desk's own.
 - **SEO:** the name, added to every page's title as "Page — Name"; the home page's own title and meta description; and the favicon (a square SVG, or a 512 × 512 PNG).
 
-These are saved in the database and laid over `support.config.json`, which still sets the defaults and everything else. **Reset to defaults** goes back to the file.
+These are saved in the database and laid over `support.config.json`, which still sets the defaults and everything else. **Reset to defaults** goes back to the file. A new logo or favicon shows in the previews as soon as you pick it, and only goes live when you press **Save** (**Discard** drops it). Next to each font choice is a line of text in that font.
 
 Colours, fonts, corner radius, the brand name and logo live in [`support.config.json`](support.config.json). Edit it and restart the app. To keep your settings outside the repo (for example next to your data), point `SUPPORT_CONFIG` at another file. Anything you leave out uses the defaults in [`src/lib/site-config.ts`](src/lib/site-config.ts).
 
@@ -479,6 +561,9 @@ The chat widget is public and every answer costs model tokens, so the app limits
 | Dashboard sign-in | 10 per 15 min per IP + account, 30 per 15 min per account (any IP), 50 per 15 min per IP (any account) |
 | Account lookups ([Integrations](#integrations)) | 10 per 10 min per conversation, 30 per 10 min per IP, 120 per minute per connector site-wide; results are cached for 2 minutes per conversation |
 | Email codes | 3 per 10 min per conversation, 10 per 10 min per IP, 200 per hour site-wide; 30 code checks per 10 min per IP, and 5 wrong codes lock verification for 15 min |
+| Customer portal sign-in codes | 3 per 10 min and 10 per day per email, 10 per 10 min and 30 per day per IP, 200 per hour site-wide; 30 code checks per 10 min per IP, and 5 wrong codes lock that email for 15 min |
+| Tickets raised by customers | 5 per day per email (chat and portal together); in the portal also 3 per hour per email, 10 per day per IP and 200 per hour site-wide |
+| Customer replies in the portal | 20 per hour per email, 60 per hour per IP |
 
 - **Request checks.** Requests over 2 MB are refused. The production server times out slow or idle connections (headers 15 s, request 30 s, idle 60 s).
 - **Visitor caps.** The site-wide caps apply only to AI answers. A visitor can still message a team member who has taken over.
@@ -579,13 +664,14 @@ For visitors signed in on your site, add `?identity=` with a signed token so con
 
 ## Out of scope
 
-Intentionally not built: ticket assignment, reports and analytics, product tours, granular permissions.
+Intentionally not built: reports and analytics, product tours, granular permissions, SLAs and ticket automations.
 
 ## Roadmap
 
 Planned, roughly in priority order:
 
 - Notify the team in Slack or through a webhook when a visitor asks for a person.
+- Receive customers' email replies into their ticket (an inbound address through Postmark or Amazon SES), so a conversation by email stays in Desk.
 - Use CSP nonces instead of `'unsafe-inline'`.
 - Optional Cloudflare Turnstile check before a new conversation (see [Abuse protection](#abuse-protection)).
 - A shared rate-limit store for running several instances.

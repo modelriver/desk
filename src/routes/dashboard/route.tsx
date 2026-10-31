@@ -4,7 +4,7 @@ import { useServerFn } from '@tanstack/react-start'
 import { getMe, signOut } from '../../functions/users.ts'
 import { waitingCount } from '../../functions/dashboard.ts'
 import { HelpBot } from '../../components/HelpBot.tsx'
-import { ArchiveIcon, BookIcon, ChartIcon, ChevronsUpDownIcon, SettingsIcon, UserIcon, ExternalIcon, InboxIcon, LinkIcon, LogOutIcon, UsersIcon } from '../../components/icons.tsx'
+import { ArchiveIcon, BookIcon, ChartIcon, ChevronsUpDownIcon, SettingsIcon, UserIcon, ExternalIcon, InboxIcon, TicketIcon, LinkIcon, LogOutIcon, UsersIcon } from '../../components/icons.tsx'
 import { Badge } from '../../components/ui.tsx'
 import { cn } from '../../lib/cn.ts'
 import { initials as initialsOf } from '../../lib/initials.ts'
@@ -58,17 +58,18 @@ function NavItem({
   )
 }
 
-// How many visitors are waiting for a person, checked every 15 seconds and
-// on every page change, so it shows on any dashboard page.
-function useWaitingCount(): number {
+// How many visitors are waiting for a person, and how many tickets are open,
+// checked every 15 seconds and on every page change, so they show on any
+// dashboard page.
+function useWaitingCount(): { waiting: number; tickets: number } {
   const fetchCount = useServerFn(waitingCount)
   const router = useRouter()
-  const [count, setCount] = useState(0)
+  const [count, setCount] = useState({ waiting: 0, tickets: 0 })
   useEffect(() => {
     let alive = true
     const check = () =>
       fetchCount()
-        .then((r) => alive && setCount(r.waiting))
+        .then((r) => alive && setCount(r))
         .catch(() => {})
     void check()
     const timer = setInterval(check, 15_000)
@@ -87,7 +88,7 @@ function DashboardLayout() {
   const { brandName } = root.useLoaderData()
   const router = useRouter()
   const logout = useServerFn(signOut)
-  const waiting = useWaitingCount()
+  const { waiting, tickets } = useWaitingCount()
   const initials = initialsOf(user.name)
 
   return (
@@ -107,6 +108,9 @@ function DashboardLayout() {
           >
             Conversations
           </NavItem>
+          <NavItem to="/dashboard/tickets" icon={<TicketIcon />} count={{ value: tickets, label: tickets === 1 ? 'open ticket' : 'open tickets' }}>
+            Tickets
+          </NavItem>
           <NavItem to="/dashboard/archived" icon={<ArchiveIcon />}>
             Archived
           </NavItem>
@@ -114,7 +118,7 @@ function DashboardLayout() {
             Insights
           </NavItem>
           {user.role === 'admin' && (
-            <NavItem to="/dashboard/data" icon={<BookIcon />}>
+            <NavItem to="/dashboard/knowledge" icon={<BookIcon />}>
               Knowledge
             </NavItem>
           )}

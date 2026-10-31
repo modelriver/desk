@@ -15,6 +15,8 @@ import { wantsHuman } from '../lib/handoff.ts'
 import * as state from '../server/conversation-state.server.ts'
 import { recordAiAccepted, recordAiFailure } from '../server/status.server.ts'
 import { notifyTeam } from '../server/notifications.server.ts'
+import { sendTicketConfirmation } from '../server/ticket-emails.server.ts'
+import { knownTicketSubject, ticketSubjectNames } from '../server/ticket-subjects.server.ts'
 import { recordGap } from '../server/insights.server.ts'
 import type { HandoffReason } from '../server/conversation-state.server.ts'
 import { conversationChanged } from '../server/dashboard-data.server.ts'
@@ -35,7 +37,10 @@ import { sendEmail } from '../server/email.server.ts'
 import { getSiteConfig } from '../server/site-config.server.ts'
 import { errorMessage } from '../lib/errors.ts'
 import { escapeHtml } from '../lib/escape.ts'
-import { CHAT_PAUSED_MESSAGE, chatEnabled } from '../server/chat-availability.server.ts'
+import { CHAT_PAUSED_MESSAGE, chatEnabled, HANDOFF_OFF_MESSAGE, handoffEnabled, TICKETS_OFF_MESSAGE, ticketsEnabled } from '../server/chat-availability.server.ts'
+import { createTicket } from '../server/tickets.server.ts'
+import { isBlocked } from '../server/ticket-access.server.ts'
+import { TICKET_LIMITS, TICKETS_PER_EMAIL_PER_DAY } from '../lib/ticket-core.ts'
 import { avatarsByName } from '../server/avatars.server.ts'
 
 // Public chat endpoints used by the widget. A conversation is identified by an
@@ -202,14 +207,20 @@ function markHandoff(
 // budget is used up). Instead of an error, the question goes to the team, as
 // long as there's a session to put it in. Without one (the very first
 // message), the team couldn't see it, so the visitor gets a gentle retry message.
+// With "Talk with a person" off no one is coming, so the visitor is asked to
+// try again, or raise a ticket instead while tickets are on.
 async function handOffAfterAiFailure(conv: { id: string; visitor_name: string }, sessionId: string | null, text: string, cause: unknown) {
-  console.error('[chat] the AI could not answer; handing the chat to the team', cause)
+  const teamCanJoin = handoffEnabled()
+  console.error(`[chat] the AI could not answer${teamCanJoin ? '; handing the chat to the team' : ''}`, cause)
   recordAiFailure(typeof cause === 'string' ? cause : errorMessage(cause, 'The AI request failed'))
   recordGap({ question: text, reason: 'ai_error', sessionId })
+  if (!teamCanJoin) {
+    throw new VisitorError(`Our assistant couldn’t answer just now. Please try again in a moment${ticketsEnabled() ? ', or raise a ticket from the menu' : ''}.`)
+  }
   if (!sessionId) throw new VisitorError('Our assistant couldn’t answer just now. Please try again in a moment.')
   markHandoff({ ...conv, modelriver_session_id: sessionId }, 'ai_error', text)
   await mr.appendSessionMessage(sessionId, { role: 'user', content: text })
-  return { mode: 'human' as const, stream: null, sources: [] as Source[], handoff: true, handoffReason: 'ai_error' as HandoffReason, verify: null, checked: [] as string[] }
+  return { mode: 'human' as const, stream: null, sources: [] as Source[], handoff: true, handoffReason: 'ai_error' as HandoffReason, offerTicket: false, verify: null, checked: [] as string[] }
 }
 
 function waitingSeconds(requestedAt: string | null): number | null {
@@ -235,15 +246,21 @@ export const sendMessage = createServerFn({ method: 'POST' })
 
       // "Can I talk to a person?" and similar: hand off before the AI is
       // called. Requests phrased any other way are caught by the AI, which
-      // ends its reply with [[handoff]] (see prompt-core.ts).
-      const handoff = conv.mode === 'ai' && wantsHuman(data.text)
+      // ends its reply with [[handoff]] (see prompt-core.ts). With "Talk with
+      // a person" off, the AI answers instead (saying no one is free) and the
+      // widget offers to raise a ticket, while tickets are on.
+      const teamCanJoin = handoffEnabled(db)
+      const ticketsOpen = ticketsEnabled(db)
+      const asksForPerson = conv.mode === 'ai' && wantsHuman(data.text)
+      const handoff = asksForPerson && teamCanJoin
+      const offerTicket = asksForPerson && !teamCanJoin && ticketsOpen
       if (handoff) markHandoff(conv, 'asked', data.text)
       const handoffReason: HandoffReason | null = handoff ? 'asked' : null
 
       // The team has the chat: store the message in the session for them.
       if ((conv.mode === 'human' || handoff) && conv.modelriver_session_id) {
         await mr.appendSessionMessage(conv.modelriver_session_id, { role: 'user', content: data.text })
-        return { mode: 'human' as const, stream: null, sources: [] as Source[], handoff, handoffReason, verify: null, checked: [] as string[] }
+        return { mode: 'human' as const, stream: null, sources: [] as Source[], handoff, handoffReason, offerTicket, verify: null, checked: [] as string[] }
       }
       // With no session yet there is nowhere to store the message, so the AI
       // is still called once (which creates the session) to acknowledge it.
@@ -261,7 +278,7 @@ export const sendMessage = createServerFn({ method: 'POST' })
       }
 
       const matches = searchContent(data.text, 6)
-      const context = buildContextMessage(matches)
+      const context = buildContextMessage(matches, { handoff: teamCanJoin, tickets: ticketsOpen })
       // The visitor's own orders, billing or bookings, from connectors. A
       // failing connector never fails the answer: the AI is told it's unavailable.
       // A message from the visitor keeps their verification alive; one that
@@ -305,6 +322,7 @@ export const sendMessage = createServerFn({ method: 'POST' })
       if (!matches.length) recordGap({ question: data.text, reason: 'no_match', sessionId: accepted.session_id ?? sessionId })
       // The first answered message starts the session: a new conversation for the team.
       if (!sessionId && accepted.session_id) {
+        mr.sessionsChanged()
         notifyTeam({ kind: 'new_conversation', visitorName: conv.visitor_name, sessionId: accepted.session_id, text: data.text })
       }
       db.prepare(
@@ -316,7 +334,7 @@ export const sendMessage = createServerFn({ method: 'POST' })
         websocketChannel: accepted.websocket_channel,
         wsToken: accepted.ws_token,
       }
-      return { mode: 'ai' as const, stream, sources: context.sources, handoff, handoffReason, verify: account.verify, checked: account.checked }
+      return { mode: 'ai' as const, stream, sources: context.sources, handoff, handoffReason, offerTicket, verify: account.verify, checked: account.checked }
     }),
   )
 
@@ -325,6 +343,8 @@ export const sendMessage = createServerFn({ method: 'POST' })
 export const requestHandoff = createServerFn({ method: 'POST' }).handler(() =>
   visitorSafe(() => {
     const conv = requireConversation()
+    // Turned off in Settings (a widget loaded before that may still offer it).
+    if (!handoffEnabled()) throw new VisitorError(HANDOFF_OFF_MESSAGE)
     if (!allowAll([{ key: `handoff:${conv.id}`, max: 10, windowMs: HOUR }])) {
       throw new VisitorError('Too many requests. Please wait a moment.')
     }
@@ -352,9 +372,12 @@ export const handOffAfterAiError = createServerFn({ method: 'POST' })
       }
       // Nothing to hand over without a session: the widget asks them to try again.
       if (!conv.modelriver_session_id) return { handedOff: false as const }
-      console.error(`[chat] an answer failed for conversation ${conv.id}; handing the chat to the team`)
+      const teamCanJoin = handoffEnabled()
+      console.error(`[chat] an answer failed for conversation ${conv.id}${teamCanJoin ? '; handing the chat to the team' : ''}`)
       recordAiFailure('An answer failed while streaming (model error, timeout or lost connection)')
       if (data.question) recordGap({ question: data.question, reason: 'ai_error', sessionId: conv.modelriver_session_id })
+      // No one can join: the widget asks them to try again or raise a ticket.
+      if (!teamCanJoin) return { handedOff: false as const }
       markHandoff(conv, 'ai_error', data.question)
       const waiting = waitingSeconds(conv.handoff_requested_at) ?? 0
       return {
@@ -434,7 +457,7 @@ export const getConversation = createServerFn({ method: 'POST' })
       // No conversation: the widget asks for a name, showing any wait first,
       // or says the team closed the one they were in.
       const retryAfterSeconds = restartWaitSeconds({ device: deviceId(false), ip: clientIp() })
-      return { conversation: null, messages: [] as WidgetMessage[], articles, retryAfterSeconds, closedFor }
+      return { conversation: null, messages: [] as WidgetMessage[], articles, retryAfterSeconds, closedFor, teamCanJoin: handoffEnabled(), ticketsOpen: ticketsEnabled(), ticketSubjects: ticketSubjectNames() }
     }
     // The widget polls every 4-10 seconds; this leaves room for reloads but
     // stops a script from hammering ModelRiver through us.
@@ -455,14 +478,20 @@ export const getConversation = createServerFn({ method: 'POST' })
       // Reloads don't count as activity, so an idle open chat still lapses.
       account: accountState(currentVerification(getDb(), conv.id, { touch: false })),
     }
-    if (!conv.modelriver_session_id) return { conversation, messages: [] as WidgetMessage[], articles }
+    // Whether "Talk with a person" is on: off, the widget offers to raise a
+    // ticket instead, if new tickets are on (`ticketsOpen`).
+    const teamCanJoin = handoffEnabled()
+    const ticketsOpen = ticketsEnabled()
+    // What the Raise a ticket card offers to pick from (none: just the message).
+    const ticketSubjects = ticketSubjectNames()
+    if (!conv.modelriver_session_id) return { conversation, messages: [] as WidgetMessage[], articles, teamCanJoin, ticketsOpen, ticketSubjects }
     let session: mr.SessionDetail
     try {
       session = await (data.fresh ? mr.getSession : mr.getSessionCached)(conv.modelriver_session_id)
     } catch (err) {
       // History is temporarily unavailable; the chat itself still works.
       console.error('[chat] could not load session history', err)
-      return { conversation, messages: null, articles }
+      return { conversation, messages: null, articles, teamCanJoin, ticketsOpen, ticketSubjects }
     }
     // Only the conversation's own turns; anything else ModelRiver might add
     // to a session (such as instructions) never reaches the visitor.
@@ -476,7 +505,7 @@ export const getConversation = createServerFn({ method: 'POST' })
       authorAvatar: m.author === 'agent' && m.author_name ? (avatars.get(m.author_name) ?? null) : null,
       content: m.content,
     }))
-    return { conversation, messages, articles }
+    return { conversation, messages, articles, teamCanJoin, ticketsOpen, ticketSubjects }
   }),
 )
 
@@ -491,6 +520,8 @@ function accountState(verification: { email: string | null; expired: boolean }) 
     verificationExpired: verification.expired,
     lookups: hints.enabled,
     canVerify: hints.enabled && identityMethods().emailCode,
+    // Email codes can be sent (email is set up): raising a ticket needs a verified email then.
+    emailCodes: identityMethods().emailCode,
     lookupAlways: hints.always,
     lookupPatterns: hints.patterns,
   }
@@ -500,6 +531,55 @@ function asVisitorError(err: unknown): never {
   if (err instanceof IdentityError) throw new VisitorError(err.message)
   throw err
 }
+
+// A ticket raised from the chat while "Talk with a person" is off (Tickets in
+// the dashboard), emailed to whoever gets handoff notifications. The team
+// answers by email, so the visitor proves theirs first (a 6-digit code, or a
+// signed-in visitor's identity token). Without email set up on the server
+// there's no code to send: the ticket is raised without one, and the team can
+// only answer in the chat.
+export const raiseTicket = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => {
+    const o = asObject(input)
+    return { text: str(o, 'text', { max: TICKET_LIMITS.message }), subject: typeof o.subject === 'string' ? o.subject.slice(0, 200) : null }
+  })
+  .handler(({ data }) =>
+    visitorSafe(() => {
+      if (!chatEnabled()) throw new VisitorError(CHAT_PAUSED_MESSAGE)
+      // Turned off in Settings (a widget loaded before that may still offer it).
+      if (!ticketsEnabled()) throw new VisitorError(TICKETS_OFF_MESSAGE)
+      const conv = requireConversation()
+      const allowed = allowAll([
+        { key: `leave-msg:${conv.id}`, max: 3, windowMs: HOUR },
+        { key: `leave-msg-ip:${clientIp()}`, max: 10, windowMs: HOUR },
+        { key: 'leave-msg-global', max: 300, windowMs: HOUR },
+      ])
+      if (!allowed) throw new VisitorError('We’ve got your tickets already. Please wait a while before raising another.')
+      const db = getDb()
+      const verified = currentVerification(db, conv.id, { touch: false }).email
+      // Only a proven address: a typed one could be anyone's, and the team would be writing to strangers.
+      if (!verified && identityMethods().emailCode) throw new VisitorError('Confirm your email first, so our replies reach you.')
+      // A blocked address, or too many tickets from it today (shared with the customer portal).
+      if (verified && (isBlocked(db, verified) || !allowAll([{ key: `customer-tickets-day:${verified}`, max: TICKETS_PER_EMAIL_PER_DAY, windowMs: DAY }]))) {
+        throw new VisitorError('We can’t raise another ticket from this address right now. Please add to one you’ve already raised.')
+      }
+      const { id: ticketId, ref: ticketRef } = createTicket(db, {
+        conversationId: conv.id,
+        sessionId: conv.modelriver_session_id,
+        visitorName: conv.visitor_name,
+        email: verified,
+        emailVerified: verified !== null,
+        // One of the subjects from Tickets → Subjects, else taken from the message.
+        subject: knownTicketSubject(data.subject, db),
+        text: data.text,
+        source: 'chat',
+      })
+      notifyTeam({ kind: 'ticket', ticketRef, visitorName: conv.visitor_name, sessionId: conv.modelriver_session_id, text: data.text })
+      // Only to a proven address (a visitor without one can only be answered in the chat).
+      if (verified) sendTicketConfirmation({ id: ticketId, ref: ticketRef, email: verified, message: data.text }, db)
+      return { sent: true, ticketRef }
+    }),
+  )
 
 // Step 1 of verifying an email: a 6-digit code is sent to it.
 export const requestEmailCode = createServerFn({ method: 'POST' })
@@ -511,7 +591,9 @@ export const requestEmailCode = createServerFn({ method: 'POST' })
   .handler(({ data }) =>
     visitorSafe(async () => {
       const conv = requireConversation()
-      if (!identityMethods().emailCode || !lookupHints(getDb()).enabled) {
+      // For account lookups, and for raising a ticket while "Talk with a person" is off.
+      const forTicket = !handoffEnabled() && ticketsEnabled()
+      if (!identityMethods().emailCode || (!lookupHints(getDb()).enabled && !forTicket)) {
         throw new VisitorError('Email verification isn’t available in this chat.')
       }
       // Each code is an email to an address the visitor typed: limited per
@@ -522,6 +604,8 @@ export const requestEmailCode = createServerFn({ method: 'POST' })
         { key: 'verify-send-global', max: 200, windowMs: HOUR },
       ])
       if (!allowed) throw new VisitorError('That’s a few codes already. Please wait a few minutes.')
+      // A blocked address gets no code, and the same answer as anyone else.
+      if (isBlocked(getDb(), data.email)) return { sentTo: maskEmail(data.email) }
       let code: string
       try {
         code = issueEmailCode(getDb(), conv.id, data.email)
@@ -529,12 +613,12 @@ export const requestEmailCode = createServerFn({ method: 'POST' })
         asVisitorError(err)
       }
       const brand = getSiteConfig().config.brand.name
-      const text = `Your ${brand} verification code is ${code}.\n\nIt expires in 10 minutes. Enter it in the chat so we can look up your account.\n\nIf you didn’t ask for this, you can ignore this email.`
+      const text = `Your ${brand} verification code is ${code}.\n\nIt expires in 10 minutes. Enter it in the chat to confirm this is your email.\n\nIf you didn’t ask for this, you can ignore this email.`
       await sendEmail({
         to: data.email,
         subject: `${code} is your ${brand} verification code`,
         text,
-        html: `<div style="font-family:system-ui,sans-serif"><p>Your ${escapeHtml(brand)} verification code is</p><p style="font-size:28px;font-weight:600;letter-spacing:4px">${code}</p><p>It expires in 10 minutes. Enter it in the chat so we can look up your account.</p><p style="color:#666">If you didn’t ask for this, you can ignore this email.</p></div>`,
+        html: `<div style="font-family:system-ui,sans-serif"><p>Your ${escapeHtml(brand)} verification code is</p><p style="font-size:28px;font-weight:600;letter-spacing:4px">${code}</p><p>It expires in 10 minutes. Enter it in the chat to confirm this is your email.</p><p style="color:#666">If you didn’t ask for this, you can ignore this email.</p></div>`,
       })
       return { sentTo: maskEmail(data.email) }
     }),

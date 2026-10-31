@@ -106,7 +106,7 @@ Any platform that runs a Docker image with a persistent disk can run Desk: one i
 
 Desk needs a disk that survives restarts, since everything it keeps is in `/data`. Platforms without one don't fit as they are: Cloudflare Containers (the disk is reset when a container sleeps), Vercel and other serverless functions. Running there would mean moving the database to a hosted one and the in-memory parts (search index, rate limits, timers) to shared services.
 
-After the first deploy on any platform: import `examples/support_assistant.workflow.json` in the ModelRiver console, create the first admin (below), and set `APP_URL` to the address you use (it's for links in emails and the sitemap).
+After the first deploy on any platform: import `examples/support_assistant.workflow.json` in the ModelRiver console, create the first admin (below), and set `APP_URL` to the address you use (it's for links in emails and the sitemap). Then set up email (recommended): `EMAIL_PROVIDER`, the provider's key, `EMAIL_FROM` and `SUPPORT_REPLY_TO`. Raising and answering tickets, email verification for account lookups, and team notifications all need it; see [Set up email](../README.md#set-up-email-recommended).
 
 ### Fly.io
 

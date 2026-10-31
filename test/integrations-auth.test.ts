@@ -7,7 +7,9 @@ import fs from 'node:fs'
 // require a signed-in user, apart from the ones visitors and sign-in use.
 const FUNCTIONS_DIR = new URL('../src/functions/', import.meta.url)
 // Visitor-facing (help center and chat widget): they check the visitor cookie instead.
-const PUBLIC_FILES = new Set(['chat.ts', 'help.ts'])
+// customer-portal.ts: the customer portal, which checks their own sign-in
+// (a key from their email, or a code) instead; see the test below.
+const PUBLIC_FILES = new Set(['chat.ts', 'help.ts', 'customer-portal.ts'])
 // Sign-in steps, which run before there is a user.
 const PUBLIC_FUNCTIONS = new Set(['getMe', 'signIn', 'verifyTwoFactorCode', 'completeTwoFactorSetup', 'signOut'])
 // Every function in these files is for admins only.
@@ -46,4 +48,17 @@ test('the visitor-facing verification functions never return the full email', ()
     const body = source.slice(source.indexOf('.handler(', start), end)
     for (const ret of body.match(/return \{[^}]*\}/g) ?? []) assert.match(ret, /maskEmail\(/, `${name}: ${ret}`)
   }
+})
+
+test('the customer portal only shows a ticket to its own, proven address', () => {
+  // Each one either proves the address (a key from their email, or a code) or
+  // reads the session that proving it started; only signing out needs neither.
+  for (const { name, body } of handlers('customer-portal.ts')) {
+    if (name === 'signOutCustomer') continue
+    assert.match(body, /redeemTicketLink|customerSessionEmail|sessionEmail\(\)|issueCustomerCode|confirmCode/, name)
+  }
+  // Tickets are only shown with a matching address, and never with the row id or full email.
+  const source = fs.readFileSync(new URL('customer-portal.ts', FUNCTIONS_DIR), 'utf8')
+  assert.match(source, /const \{ id: _id, email: _email, \.\.\.rest \} = t/)
+  for (const line of source.split('\n').filter((l) => l.includes('return view('))) assert.match(line, /, (data\.)?email\)$/, line)
 })

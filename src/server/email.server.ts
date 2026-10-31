@@ -11,7 +11,14 @@ export interface Email {
   subject: string
   text: string
   html: string
+  // Where the recipient's reply goes (ticket replies: SUPPORT_REPLY_TO).
+  replyTo?: string
+  // Extra headers, such as In-Reply-To and References so a ticket's emails
+  // stay in one thread (see ticketThreadHeaders).
+  headers?: Record<string, string>
 }
+
+const headerList = (headers: Record<string, string> | undefined) => Object.entries(headers ?? {}).map(([Name, Value]) => ({ Name, Value }))
 
 export type EmailProvider = 'resend' | 'postmark' | 'ses' | 'log'
 
@@ -33,7 +40,15 @@ const PROVIDERS: Record<EmailProvider, { label: string; settings: string[]; send
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, to: [email.to], subject: email.subject, text: email.text, html: email.html }),
+        body: JSON.stringify({
+          from,
+          to: [email.to],
+          subject: email.subject,
+          text: email.text,
+          html: email.html,
+          ...(email.replyTo ? { reply_to: email.replyTo } : {}),
+          ...(email.headers ? { headers: email.headers } : {}),
+        }),
         signal: AbortSignal.timeout(15_000),
       })
       await check(res, 'Resend')
@@ -56,6 +71,8 @@ const PROVIDERS: Record<EmailProvider, { label: string; settings: string[]; send
           Subject: email.subject,
           TextBody: email.text,
           HtmlBody: email.html,
+          ...(email.replyTo ? { ReplyTo: email.replyTo } : {}),
+          ...(email.headers ? { Headers: headerList(email.headers) } : {}),
           MessageStream: 'outbound',
         }),
         signal: AbortSignal.timeout(15_000),
@@ -72,10 +89,12 @@ const PROVIDERS: Record<EmailProvider, { label: string; settings: string[]; send
       const body = JSON.stringify({
         FromEmailAddress: from,
         Destination: { ToAddresses: [email.to] },
+        ...(email.replyTo ? { ReplyToAddresses: [email.replyTo] } : {}),
         Content: {
           Simple: {
             Subject: { Data: email.subject, Charset: 'UTF-8' },
             Body: { Text: { Data: email.text, Charset: 'UTF-8' }, Html: { Data: email.html, Charset: 'UTF-8' } },
+            ...(email.headers ? { Headers: headerList(email.headers) } : {}),
           },
         },
       })
@@ -101,7 +120,8 @@ const PROVIDERS: Record<EmailProvider, { label: string; settings: string[]; send
     label: 'Server log (development)',
     settings: [],
     send: async (email, from) => {
-      console.log(`[email] from ${from} to ${email.to}: ${email.subject}\n${email.text}`)
+      const headers = Object.entries(email.headers ?? {}).map(([k, v]) => `${k}: ${v}\n`).join('')
+      console.log(`[email] from ${from} to ${email.to}${email.replyTo ? ` (replies to ${email.replyTo})` : ''}: ${email.subject}\n${headers}${email.text}`)
     },
   },
 }
