@@ -311,6 +311,9 @@ export const draftTicketReply = createServerFn({ method: 'POST' })
         res = await mr.requestOnce({ messages, metadata: { purpose: 'ticket_draft', ticket: String(ticket.id) } })
       } catch (err) {
         recordAiFailure(errorMessage(err, 'An AI draft failed'))
+        if (err instanceof mr.ModelRiverError && err.code === mr.QUOTA_EXCEEDED) {
+          throw new Error('This cycle’s AI credits are used up, so Draft with AI is off until they renew. Write this one yourself.')
+        }
         throw new Error('Couldn’t write a draft just now. Try again, or write it yourself.')
       }
       recordAiAccepted()

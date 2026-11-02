@@ -18,7 +18,9 @@ const HANDOFF_KEY = 'handoff_enabled'
 const TICKETS_KEY = 'tickets_enabled'
 
 export const CHAT_PAUSED_MESSAGE = 'Chat is paused right now. Please browse our articles, or try again later.'
+// Which one a visitor sees depends on whether new tickets are on.
 export const HANDOFF_OFF_MESSAGE = 'No one from the team is available to chat right now. You can raise a ticket instead.'
+export const HANDOFF_AND_TICKETS_OFF_MESSAGE = 'No one from the team is available to chat right now. Please browse our articles, or try again later.'
 export const TICKETS_OFF_MESSAGE = 'We’re not taking new tickets right now. Please browse our articles, or try again later.'
 
 export interface ChatStatus {

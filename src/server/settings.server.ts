@@ -13,7 +13,7 @@ import type { BrandAssetKind } from '../lib/brand-assets.ts'
 import { aiActivity, appVersion, checkModelRiver, proxyWarning } from './status.server.ts'
 import { emailStatus, lastEmailResult } from './email.server.ts'
 import { mediaStatus } from './media.server.ts'
-import { currentMonth, monthUsage, setupMonth } from './usage.server.ts'
+import { currentUsage, setupMonth } from './usage.server.ts'
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
@@ -68,7 +68,7 @@ export async function collectSettings({ recheck = false } = {}) {
     .prepare('SELECT sum(notify_handoff) AS handoff, sum(notify_new_conversations) AS conversations FROM users')
     .get() as { handoff: number | null; conversations: number | null }
 
-  const [connection, usage] = await Promise.all([checkModelRiver({ force: recheck }), monthUsage(currentMonth())])
+  const [connection, usage] = await Promise.all([checkModelRiver({ force: recheck }), currentUsage()])
 
   return {
     branding: brandingSettings(),

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { AppearanceSettings, SeoSettings } from '../../components/BrandingSettings.tsx'
 import { useServerFn } from '@tanstack/react-start'
-import { getMonthUsage, getSettings, sendTestEmail, setChatAvailability, setHandoffAvailability, setTicketAvailability } from '../../functions/settings.ts'
+import { getUsage, getSettings, sendTestEmail, setChatAvailability, setHandoffAvailability, setTicketAvailability } from '../../functions/settings.ts'
 import { testImageStorage } from '../../functions/media.ts'
 import { formatBytes } from '../../lib/media-core.ts'
 import { LoadError } from '../../components/LoadError.tsx'
@@ -13,6 +13,7 @@ import { TabBar } from '../../components/TabBar.tsx'
 import { cn } from '../../lib/cn.ts'
 import { BusyIcon } from '../../components/BusyIcon.tsx'
 import { errorMessage } from '../../lib/errors.ts'
+import { cycleLabel, formatCycleDay, recentCycles } from '../../lib/usage-cycles.ts'
 
 const TABS = [
   { id: 'general', label: 'General' },
@@ -306,37 +307,44 @@ function Usage({ used, max, nf }: { used: number; max: number; nf: Intl.NumberFo
   )
 }
 
-// A month of AI answers as ModelRiver counts (and bills) them, with earlier months.
+const USAGE_DESCRIPTION =
+  'Counted by ModelRiver for this install’s API key, the same way it bills them: one per AI answer or AI-drafted ticket reply, including failed calls. Replies from your team aren’t counted.'
+
+// AI requests as ModelRiver counts (and bills) them, with earlier periods: per
+// credit cycle when ModelRiver gives this install a monthly quota, otherwise
+// per calendar month.
 function UsageSection({ initial, since }: { initial: Data['usage']; since: string }) {
-  const fetchUsage = useServerFn(getMonthUsage)
+  const fetchUsage = useServerFn(getUsage)
   const [view, setView] = useState(initial)
   const [busy, setBusy] = useState(false)
   const nf = new Intl.NumberFormat('en')
   const u = view.usage
+  const cycles = initial.kind === 'cycle' && initial.usage ? recentCycles(initial.usage.cycle_anchor_at, initial.usage.period_start, since) : []
 
-  const load = async (month: string, refresh: boolean) => {
+  const load = async (period: { month: string } | { cycle: string }, refresh: boolean) => {
     setBusy(true)
     try {
-      setView(await fetchUsage({ data: { month, refresh } }))
+      setView(await fetchUsage({ data: { ...period, refresh } }))
     } finally {
       setBusy(false)
     }
   }
+  const current = view.kind === 'cycle' ? { cycle: view.cycle } : { month: view.month }
+  const periodName = view.kind === 'cycle' ? 'cycle' : 'month'
 
   return (
-    <Section
-      title="AI answers"
-      description="Counted by ModelRiver for this install’s API key, the same way it bills them: one per AI answer. Replies from your team aren’t counted."
-    >
+    <Section title={initial.kind === 'cycle' ? 'AI credits' : 'AI requests'} description={USAGE_DESCRIPTION}>
       <div className="flex flex-wrap items-start gap-3 border-b border-border px-5 py-4">
         <div className="min-w-0 flex-1">
-          {u ? (
+          {view.kind === 'cycle' && view.usage ? (
+            <CycleHeadline usage={view.usage} isCurrent={view.cycle === 'current'} nf={nf} />
+          ) : view.kind === 'month' && view.usage ? (
             <>
-              <p className="text-2xl font-semibold tabular-nums">{nf.format(u.billable_requests)}</p>
-              <p className="text-sm text-muted-foreground">AI answers in {monthLabel(view.month)}</p>
+              <p className="text-2xl font-semibold tabular-nums">{nf.format(view.usage.billable_requests)}</p>
+              <p className="text-sm text-muted-foreground">AI requests in {monthLabel(view.month)}</p>
             </>
           ) : (
-            <p className="font-medium">No usage to show for {monthLabel(view.month)}</p>
+            <p className="font-medium">No usage to show for {view.kind === 'cycle' ? 'this cycle' : monthLabel(view.month)}</p>
           )}
           {view.error && (
             <div className="mt-2">
@@ -358,14 +366,24 @@ function UsageSection({ initial, since }: { initial: Data['usage']; since: strin
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Select aria-label="Month" value={view.month} disabled={busy} onChange={(e) => void load(e.target.value, false)}>
-            {recentMonths(initial.month, since).map((m) => (
-              <option key={m} value={m}>
-                {monthLabel(m)}
-              </option>
-            ))}
-          </Select>
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => void load(view.month, true)}>
+          {view.kind === 'cycle' ? (
+            <Select aria-label="Cycle" value={view.cycle} disabled={busy} onChange={(e) => void load({ cycle: e.target.value }, false)}>
+              {cycles.map((c, i) => (
+                <option key={c.start} value={i === 0 ? 'current' : c.start}>
+                  {cycleLabel(c)}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <Select aria-label="Month" value={view.month} disabled={busy} onChange={(e) => void load({ month: e.target.value }, false)}>
+              {recentMonths(initial.kind === 'month' ? initial.month : view.month, since).map((m) => (
+                <option key={m} value={m}>
+                  {monthLabel(m)}
+                </option>
+              ))}
+            </Select>
+          )}
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => void load(current, true)}>
             <BusyIcon busy={busy} size={14} idle={<RefreshIcon size={14} />} />
             Refresh
           </Button>
@@ -378,9 +396,11 @@ function UsageSection({ initial, since }: { initial: Data['usage']; since: strin
             {nf.format(u.requests)}
           </Row>
           <Row label="Failed requests">{nf.format(u.failed_requests)}</Row>
-          <Row label="Conversations" hint="With at least one AI answer this month.">
-            {nf.format(u.active_sessions)}
-          </Row>
+          {u.active_sessions !== null && (
+            <Row label="Conversations" hint={`With at least one AI request this ${periodName}.`}>
+              {nf.format(u.active_sessions)}
+            </Row>
+          )}
           <Row label="Tokens">{nf.format(u.total_tokens)}</Row>
           <Row label="Estimated model cost" hint="From ModelRiver’s model prices.">
             ${u.price.toFixed(2)}
@@ -391,7 +411,45 @@ function UsageSection({ initial, since }: { initial: Data['usage']; since: strin
   )
 }
 
-// AI answers per day as small bars; each bar's tooltip has the count.
+type CycleUsage = NonNullable<Extract<Data['usage'], { kind: 'cycle' }>['usage']>
+
+// "640 of 1,000 AI credits · renews Nov 30" with a bar that turns red when
+// nearly used up.
+function CycleHeadline({ usage, isCurrent, nf }: { usage: CycleUsage; isCurrent: boolean; nf: Intl.NumberFormat }) {
+  const { used, quota } = usage
+  const share = quota ? Math.min(1, used / quota) : 0
+  const renews = formatCycleDay(usage.period_end)
+  const when = isCurrent ? `renews ${renews}` : cycleLabel({ start: usage.period_start.slice(0, 10), end: usage.period_end.slice(0, 10) })
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        <span className="text-2xl font-semibold tabular-nums text-foreground">{nf.format(used)}</span>
+        {quota !== null && <> of {nf.format(quota)}</>} AI credits · {when}
+      </p>
+      {quota !== null && (
+        <span
+          className="mt-2 block h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-label="AI credits used"
+          aria-valuemin={0}
+          aria-valuemax={quota}
+          aria-valuenow={Math.min(used, quota)}
+        >
+          <span className={cn('block h-full rounded-full', share >= 0.9 ? 'bg-destructive' : 'bg-primary')} style={{ width: `${share * 100}%` }} />
+        </span>
+      )}
+      {isCurrent && quota !== null && used >= quota && (
+        <div className="mt-2">
+          <Notice tone="error">
+            This cycle’s AI credits are used up. Until they renew on {renews}, chats go to your team and Draft with AI is off.
+          </Notice>
+        </div>
+      )}
+    </>
+  )
+}
+
+// Billable AI requests per day as small bars; each bar's tooltip has the count.
 function DayBars({ days, nf }: { days: Array<{ date: string; billable_requests: number }>; nf: Intl.NumberFormat }) {
   const max = Math.max(0, ...days.map((d) => d.billable_requests))
   if (max === 0) return null

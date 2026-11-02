@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { openDb } from '../src/server/db.server.ts'
-import { ModelRiverError, type MonthUsage } from '../src/server/modelriver.server.ts'
-import { currentMonth, fetchMonthUsage, MONTH_PATTERN, setupMonth } from '../src/server/usage.server.ts'
+import { ModelRiverError, type CycleUsage, type MonthUsage } from '../src/server/modelriver.server.ts'
+import { currentMonth, CYCLE_PATTERN, fetchCycleUsage, fetchMonthUsage, hasQuota, MONTH_PATTERN, setupMonth } from '../src/server/usage.server.ts'
 
 const october: MonthUsage = {
   project_id: 'p1',
@@ -74,4 +74,48 @@ test('usage starts from the month the first team account was created', () => {
   insert.run('2', 'b@example.com', 'B', 'h', 'agent', '2026-03-02T09:00:00.000Z')
   insert.run('1', 'a@example.com', 'A', 'h', 'admin', '2025-10-14T09:00:00.000Z')
   assert.equal(setupMonth(db, now), '2025-10')
+})
+
+const cycle: CycleUsage = {
+  ...october,
+  period_start: '2026-10-30T00:00:00Z',
+  period_end: '2026-11-30T00:00:00Z',
+  cycle_anchor_at: '2026-10-30T00:00:00Z',
+  used: 640,
+  quota: 1000,
+}
+
+test('a credit cycle is fetched and kept apart from the months', async () => {
+  const db = openDb(':memory:')
+  const asked: string[] = []
+  const view = await fetchCycleUsage('current', db, async (c) => {
+    asked.push(c)
+    return cycle
+  })
+  assert.deepEqual(asked, ['current'])
+  assert.equal(view.kind, 'cycle')
+  assert.equal(view.usage?.used, 640)
+  assert.ok(hasQuota(view.usage))
+
+  const offline = await fetchCycleUsage('current', db, async () => {
+    throw new TypeError('fetch failed')
+  })
+  assert.equal(offline.usage?.used, 640, 'falls back to the snapshot')
+  const month = await fetchMonthUsage('2026-10', db, async () => {
+    throw new TypeError('fetch failed')
+  })
+  assert.equal(month.usage, null, 'a cycle snapshot is not a month snapshot')
+})
+
+test('only a numeric quota means the install has credits', () => {
+  assert.ok(hasQuota(cycle))
+  assert.ok(!hasQuota({ ...cycle, quota: null }))
+  // An older ModelRiver ignores ?cycle= and answers with the month.
+  assert.ok(!hasQuota(october as unknown as CycleUsage))
+  assert.ok(!hasQuota(null))
+})
+
+test('cycles are "current" or a date', () => {
+  for (const good of ['current', '2026-10-30', '2026-02-28']) assert.ok(CYCLE_PATTERN.test(good), good)
+  for (const bad of ['previous', '2026-10', '2026-13-01', '2026-10-32', '']) assert.ok(!CYCLE_PATTERN.test(bad), bad)
 })

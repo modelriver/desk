@@ -168,11 +168,11 @@ export function sessionsChanged() {
   if (sessionList) sessionList.at = Math.min(sessionList.at, Date.now() - SESSIONS_FRESH_MS)
 }
 
-// The project's usage for a UTC calendar month (GET /v1/usage).
-// billable_requests counts AI answers; team replies added to a session don't count.
-export interface MonthUsage {
+// The project's usage for a period (GET /v1/usage). billable_requests counts
+// the calls ModelRiver bills: AI answers and AI-drafted ticket replies,
+// including failed calls. Team replies added to a session don't count.
+export interface PeriodUsage {
   project_id: string
-  month: string
   period_start: string
   period_end: string
   billable_requests: number
@@ -182,14 +182,39 @@ export interface MonthUsage {
   completion_tokens: number
   total_tokens: number
   price: number
-  active_sessions: number
+  // Null for a cycle whose earliest logs ModelRiver no longer keeps.
+  active_sessions: number | null
   by_day: Array<{ date: string; billable_requests: number; requests: number }>
   updated_at: string
+}
+
+// A UTC calendar month (?month=YYYY-MM).
+export interface MonthUsage extends PeriodUsage {
+  month: string
+  active_sessions: number
+}
+
+// One of the project's monthly credit cycles (?cycle=current|previous|YYYY-MM-DD),
+// which start on the day of the month of cycle_anchor_at. `quota` is null when
+// the project has no monthly quota.
+export interface CycleUsage extends PeriodUsage {
+  cycle_anchor_at: string
+  used: number
+  quota: number | null
 }
 
 export function getUsage(month: string): Promise<MonthUsage> {
   return call('GET', `/usage?${new URLSearchParams({ month })}`)
 }
+
+// `cycle` is "current" or a date inside the cycle (YYYY-MM-DD). A ModelRiver
+// without cycles ignores it and answers with the current month instead (no `quota`).
+export function getCycleUsage(cycle: string): Promise<CycleUsage | MonthUsage> {
+  return call('GET', `/usage?${new URLSearchParams({ cycle })}`)
+}
+
+// ModelRiver refuses AI calls with this code once the project's monthly quota is used.
+export const QUOTA_EXCEEDED = 'project_quota_exceeded'
 
 export function getSession(sessionId: string): Promise<SessionDetail> {
   return call('GET', `/sessions/${encodeURIComponent(sessionId)}`)

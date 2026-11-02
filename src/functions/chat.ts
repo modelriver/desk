@@ -37,7 +37,7 @@ import { sendEmail } from '../server/email.server.ts'
 import { getSiteConfig } from '../server/site-config.server.ts'
 import { errorMessage } from '../lib/errors.ts'
 import { escapeHtml } from '../lib/escape.ts'
-import { CHAT_PAUSED_MESSAGE, chatEnabled, HANDOFF_OFF_MESSAGE, handoffEnabled, TICKETS_OFF_MESSAGE, ticketsEnabled } from '../server/chat-availability.server.ts'
+import { CHAT_PAUSED_MESSAGE, chatEnabled, HANDOFF_AND_TICKETS_OFF_MESSAGE, HANDOFF_OFF_MESSAGE, handoffEnabled, TICKETS_OFF_MESSAGE, ticketsEnabled } from '../server/chat-availability.server.ts'
 import { createTicket } from '../server/tickets.server.ts'
 import { isBlocked } from '../server/ticket-access.server.ts'
 import { TICKET_LIMITS, TICKETS_PER_EMAIL_PER_DAY } from '../lib/ticket-core.ts'
@@ -344,7 +344,7 @@ export const requestHandoff = createServerFn({ method: 'POST' }).handler(() =>
   visitorSafe(() => {
     const conv = requireConversation()
     // Turned off in Settings (a widget loaded before that may still offer it).
-    if (!handoffEnabled()) throw new VisitorError(HANDOFF_OFF_MESSAGE)
+    if (!handoffEnabled()) throw new VisitorError(ticketsEnabled() ? HANDOFF_OFF_MESSAGE : HANDOFF_AND_TICKETS_OFF_MESSAGE)
     if (!allowAll([{ key: `handoff:${conv.id}`, max: 10, windowMs: HOUR }])) {
       throw new VisitorError('Too many requests. Please wait a moment.')
     }

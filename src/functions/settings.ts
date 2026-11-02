@@ -5,7 +5,7 @@ import { allowAll } from '../server/rate-limit.server.ts'
 import { collectSettings } from '../server/settings.server.ts'
 import { setChatEnabled, setHandoffEnabled, setTicketsEnabled } from '../server/chat-availability.server.ts'
 import { sendEmail } from '../server/email.server.ts'
-import { currentMonth, monthUsage, MONTH_PATTERN } from '../server/usage.server.ts'
+import { currentMonth, cycleUsage, CYCLE_PATTERN, monthUsage, MONTH_PATTERN } from '../server/usage.server.ts'
 
 // Admins only: how this install is set up and whether the AI is reachable.
 export const getSettings = createServerFn({ method: 'POST' })
@@ -17,11 +17,13 @@ export const getSettings = createServerFn({ method: 'POST' })
     return collectSettings({ recheck })
   })
 
-// Admins only: a month's usage from ModelRiver. `refresh` skips the minute-long cache.
-export const getMonthUsage = createServerFn({ method: 'POST' })
+// Admins only: usage from ModelRiver for a month (YYYY-MM) or a credit cycle
+// ("current", or a date inside it). `refresh` skips the minute-long cache.
+export const getUsage = createServerFn({ method: 'POST' })
   .validator((input: unknown) => {
-    const { month, refresh } = asObject(input ?? {})
+    const { month, cycle, refresh } = asObject(input ?? {})
     return {
+      cycle: typeof cycle === 'string' && CYCLE_PATTERN.test(cycle) ? cycle : null,
       month: typeof month === 'string' && MONTH_PATTERN.test(month) ? month : currentMonth(),
       refresh: refresh === true,
     }
@@ -29,7 +31,7 @@ export const getMonthUsage = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const me = requireUser('admin')
     const refresh = data.refresh && allowAll([{ key: `usage-refresh:${me.id}`, max: 6, windowMs: 60_000 }])
-    return monthUsage(data.month, { refresh })
+    return data.cycle ? cycleUsage(data.cycle, { refresh }) : monthUsage(data.month, { refresh })
   })
 
 // Sends a test email to the admin who asked, to prove the provider works.

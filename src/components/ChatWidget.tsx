@@ -973,8 +973,9 @@ export function ChatWidget({
     menuItems.push({ label: 'Switch to AI assistant', icon: <HelpBot size={16} animated={false} />, onSelect: () => void backToAi() })
   } else if (mode === 'ai' && canRaiseTicket) {
     menuItems.push({ label: 'Raise a ticket', icon: <TicketIcon size={15} />, onSelect: () => setMessageCard('menu') })
-  } else if (mode === 'ai' && messages.length > 0) {
+  } else if (mode === 'ai' && teamCanJoin && messages.length > 0) {
     // The team works from the conversation's history, so there has to be a message first.
+    // With "Talk with a person" off (and tickets off too) there's nothing to offer.
     menuItems.push({ label: 'Talk to a person', icon: <HeadsetIcon size={15} />, onSelect: () => void askForPerson() })
   }
   if (account.canVerify && !account.verifiedEmail && !verify) {
