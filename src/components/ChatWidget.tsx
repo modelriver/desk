@@ -7,7 +7,6 @@ import {
   endConversation,
   getConversation,
   requestEmailCode,
-  reconnectStream,
   handOffAfterAiError,
   raiseTicket,
   liveConversation,
@@ -107,6 +106,8 @@ const PENDING_COOKIE = 'desk_pending'
 // ModelRiver stops a streaming request after 5 minutes, so the pending cookie
 // expires then too: an older answer can't still be running.
 const PENDING_MAX_AGE = 5 * 60
+// Where the SDK keeps the answer's resume token (localStorage), so a refresh can rejoin it.
+const MR_STORAGE_PREFIX = 'desk_mr_'
 
 // An answer that was streaming when the page was left or refreshed.
 interface Pending {
@@ -241,7 +242,6 @@ export function ChatWidget({
   const send = useServerFn(sendMessage)
   const fetchConversation = useServerFn(getConversation)
   const end = useServerFn(endConversation)
-  const reconnect = useServerFn(reconnectStream)
   const handoff = useServerFn(requestHandoff)
   const reportAiError = useServerFn(handOffAfterAiError)
   const reportGap = useServerFn(reportUnanswered)
@@ -413,7 +413,9 @@ export function ChatWidget({
     savedScroll.current = atBottom ? null : el.scrollTop
   }
 
-  useEffect(() => () => socket.current?.destroy(), [])
+  // Leaving the widget mid-answer (expand, collapse, another page) keeps the
+  // SDK's stored resume token, so the next widget picks the answer up again.
+  useEffect(() => () => socket.current?.detach(), [])
 
   // On a phone the open chat fills the screen: the page behind it stays put
   // instead of scrolling along (and showing its scrollbar) under the chat.
@@ -448,18 +450,28 @@ export function ChatWidget({
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch(m) } : m)))
 
   // Stream the answer over ModelRiver's websocket using the official client SDK.
+  // The SDK reconnects on its own: ModelRiver hands it a single-use resume token
+  // over the channel, so a dropped connection or a refresh needs nothing from
+  // our server. The token is kept in localStorage (MR_STORAGE_PREFIX).
   const stream = useCallback(
-    // resumed: joining an answer that was already streaming (after a refresh or
-    // a dropped connection). Text sent before we joined is gone, so deltas
-    // are ignored and the full answer comes from stream_done / response.
+    // ticket: a new answer to join. null resumes the answer the SDK stored
+    // before a refresh; returns false (and does nothing) when there's none.
+    // resumed: joining an answer that was already streaming. Text sent before
+    // we joined is gone, so deltas are ignored and the full answer comes from
+    // stream_done / response.
     // question: what the visitor asked, for the team's Insights if the answer falls short.
-    async (ticket: StreamTicket, messageId: string, opts: { retried?: boolean; resumed?: boolean; question?: string } = {}) => {
+    // onStart: runs just before the stream starts.
+    async (
+      ticket: StreamTicket | null,
+      messageId: string,
+      opts: { resumed?: boolean; question?: string; onStart?: () => void } = {},
+    ): Promise<boolean> => {
       const { ModelRiverClient } = await import('@modelriver/client')
-      const client = new ModelRiverClient({ persist: false })
+      const client = new ModelRiverClient({ persist: true, storageKeyPrefix: MR_STORAGE_PREFIX })
       socket.current?.destroy()
       socket.current = client
       let finished = false
-      const timeout = setTimeout(() => fail(), STREAM_TIMEOUT_MS)
+      let timeout: ReturnType<typeof setTimeout> | undefined
 
       const stop = () => {
         finished = true
@@ -481,27 +493,17 @@ export function ChatWidget({
         finish(() => ({}))
         onAiFailure.current(messageId, opts.question)
       }
-      // ws tokens are single-use, so a dropped connection needs a fresh one from our server.
-      const retry = async () => {
-        if (finished || leaving.current) return
-        if (opts.retried) return fail()
-        stop()
-        try {
-          const fresh = await reconnect({ data: { channelId: ticket.channelId } })
-          await stream(fresh, messageId, { retried: true, resumed: true, question: opts.question })
-        } catch {
-          if (leaving.current) return
-          clearPending()
-          updateMessage(messageId, () => ({ streaming: false }))
-          setBusy(false)
-          onAiFailure.current(messageId, opts.question)
-        }
-      }
 
+      // After a reconnect the deltas sent during the gap are missing, so the
+      // text so far stays as it is until stream_done brings the whole answer.
+      let gap = !!opts.resumed
+      client.on('reconnecting', () => {
+        gap = true
+      })
       let answer = ''
       client.on('stream_delta', (_chunk, text) => {
         answer = text
-        if (!opts.resumed) updateMessage(messageId, () => ({ content: text }))
+        if (!gap) updateMessage(messageId, () => ({ content: text }))
       })
       client.on('stream_done', (done) => {
         if (done.accumulated_text) {
@@ -521,17 +523,32 @@ export function ChatWidget({
         }
       })
       client.on('stream_error', () => fail())
-      client.on('channel_error', () => void retry())
-      client.on('error', () => void retry())
-
-      client.connect({
-        channelId: ticket.channelId,
-        wsToken: ticket.wsToken,
-        websocketUrl: ticket.websocketUrl,
-        websocketChannel: ticket.websocketChannel,
+      // Only final: the SDK has given up reconnecting (the token expired, or
+      // the request is gone). A refresh or leaving the page also closes the
+      // socket; the next page load resumes then, so that isn't a failure.
+      client.on('error', () => {
+        if (!leaving.current) fail()
       })
+
+      if (ticket) {
+        opts.onStart?.()
+        client.connect({
+          channelId: ticket.channelId,
+          wsToken: ticket.wsToken,
+          websocketUrl: ticket.websocketUrl,
+          websocketChannel: ticket.websocketChannel,
+        })
+      } else if (client.reconnect()) {
+        opts.onStart?.()
+      } else {
+        client.destroy()
+        if (socket.current === client) socket.current = null
+        return false
+      }
+      timeout = setTimeout(() => fail(), STREAM_TIMEOUT_MS)
+      return true
     },
-    [reconnect],
+    [],
   )
 
   // Ask for a person: from the chat menu, or when the AI's reply carries the
@@ -626,16 +643,21 @@ export function ChatWidget({
       } catch {
         // Keep going: the stream can still be rejoined.
       }
-      try {
-        const ticket = await reconnect({ data: { channelId: pending.channelId } })
-        const replyId = `reply-${Date.now()}`
-        setMessages((prev) => [
-          ...prev,
-          { id: `local-${pending.startedAt}`, role: 'user', author: 'user', content: pending.question },
-          { id: replyId, role: 'assistant', author: 'ai', content: '', streaming: true },
-        ])
-        void stream(ticket, replyId, { resumed: true, question: pending.question })
-      } catch {
+      // The SDK kept the answer's resume token, so it rejoins without our server.
+      const replyId = `reply-${Date.now()}`
+      const resumed = await stream(null, replyId, {
+        resumed: true,
+        question: pending.question,
+        onStart: () =>
+          setMessages((prev) => [
+            ...prev,
+            { id: `local-${pending.startedAt}`, role: 'user', author: 'user', content: pending.question },
+            { id: replyId, role: 'assistant', author: 'ai', content: '', streaming: true },
+          ]),
+      }).catch(() => false)
+      if (!resumed) {
+        // Nothing to rejoin (the token expired, or the page was closed for a
+        // while): the answer is in the session history instead.
         clearPending()
         busyRef.current = false
         setBusy(false)
@@ -644,7 +666,7 @@ export function ChatWidget({
         setTimeout(() => void refresh(), 3000)
       }
     },
-    [fetchConversation, forgetConversation, applyWaiting, closedByTeam, reconnect, stream, refresh],
+    [fetchConversation, forgetConversation, applyWaiting, closedByTeam, stream, refresh],
   )
 
   // Load the conversation when the chat opens, resuming an answer that was

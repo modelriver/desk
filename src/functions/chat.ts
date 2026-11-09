@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { asObject, str, uuid } from './validate.ts'
+import { asObject, str } from './validate.ts'
 import { buildContextMessage, type Source } from '../lib/prompt-core.ts'
 import { getDb, now } from '../server/db.server.ts'
 import { clientIp } from '../server/auth.server.ts'
@@ -148,7 +148,6 @@ type ConversationRow = {
   visitor_name: string
   modelriver_session_id: string | null
   mode: 'ai' | 'human'
-  last_channel_id: string | null
   handoff_requested_at: string | null
   handoff_reason: HandoffReason | null
   // Proved by an email code or an identity token; connector lookups use it.
@@ -167,7 +166,7 @@ function readConversation(): { conv: (ConversationRow & { token: string }) | nul
   if (!cookie) return { conv: null, closedFor: null }
   const row = getDb()
     .prepare(
-      `SELECT id, visitor_name, modelriver_session_id, mode, last_channel_id, handoff_requested_at, handoff_reason, verified_email, ended_at
+      `SELECT id, visitor_name, modelriver_session_id, mode, handoff_requested_at, handoff_reason, verified_email, ended_at
        FROM conversations
        WHERE id = ? AND visitor_token_hash = ?`,
     )
@@ -326,8 +325,8 @@ export const sendMessage = createServerFn({ method: 'POST' })
         notifyTeam({ kind: 'new_conversation', visitorName: conv.visitor_name, sessionId: accepted.session_id, text: data.text })
       }
       db.prepare(
-        'UPDATE conversations SET modelriver_session_id = coalesce(?, modelriver_session_id), last_channel_id = ? WHERE id = ?',
-      ).run(accepted.session_id, accepted.channel_id, conv.id)
+        'UPDATE conversations SET modelriver_session_id = coalesce(?, modelriver_session_id) WHERE id = ?',
+      ).run(accepted.session_id, conv.id)
       const stream: StreamTicket = {
         channelId: accepted.channel_id,
         websocketUrl: accepted.websocket_url,
@@ -665,28 +664,6 @@ export const applyIdentity = createServerFn({ method: 'POST' })
     }),
   )
 
-
-// ws tokens are single-use with a short TTL; if the socket drops before the
-// answer arrives, ask ModelRiver for a fresh one (API key stays server-side).
-export const reconnectStream = createServerFn({ method: 'POST' })
-  .validator((input: unknown) => ({ channelId: uuid(asObject(input), 'channelId') }))
-  .handler(({ data }) =>
-    visitorSafe(async () => {
-      const conv = requireConversation()
-      if (conv.last_channel_id !== data.channelId) throw new VisitorError('Unknown stream.')
-      if (!allowAll([{ key: `reconnect:${conv.id}`, max: 10, windowMs: MINUTE }])) {
-        throw new VisitorError('Too many requests. Please wait a moment.')
-      }
-      const r = await mr.reconnectChannel(data.channelId)
-      const stream: StreamTicket = {
-        channelId: r.channel_id,
-        websocketUrl: r.websocket_url,
-        websocketChannel: r.websocket_channel,
-        wsToken: r.ws_token,
-      }
-      return stream
-    }),
-  )
 
 const WAITING_NOTE =
   '\n\nThe user has asked for a person and the team has been told. Reply with one or two short sentences ' +

@@ -157,7 +157,7 @@ Browser ──(server functions)──▶ This app ──(API key)──▶ Mode
 
 1. A visitor asks a question. The server does a quick keyword (BM25) search over the data folder and picks the best excerpts.
 2. It calls ModelRiver's `POST /v1/ai/async` with `stream: true`, the visitor's ModelRiver `session_id`, and two messages: a system message with the excerpts and citation rules, then the visitor's question.
-3. ModelRiver returns a one-time websocket token. The browser joins with [`@modelriver/client`](https://www.npmjs.com/package/@modelriver/client) and renders `stream_delta` events as they arrive.
+3. ModelRiver returns a one-time websocket token. The browser joins with [`@modelriver/client`](https://www.npmjs.com/package/@modelriver/client) and renders `stream_delta` events as they arrive. If the connection drops or the visitor refreshes mid-answer, the client rejoins on its own with a single-use resume token that ModelRiver sends over the websocket and swaps every 2 minutes. Desk's server isn't involved, and no API call is made.
 4. ModelRiver keeps the conversation history in the session. Only the visitor's question and the answer go into session memory, not the excerpts.
 5. When a team member takes over, their replies and the visitor's next messages go to the session through `POST /v1/sessions/:id/messages`, and the AI stays quiet until someone hands back.
 6. Everything is live. The open widget and the open dashboard transcript each follow the conversation over ModelRiver's session channel (`POST /v1/sessions/:id/subscribe`, then `subscribeToSession` from `@modelriver/client`). New messages arrive as they're stored, and Desk's own changes (a teammate taking over, handing back, archiving, the visitor leaving) go out as a signal (`POST /v1/sessions/:id/signals`), so a reply shows up within a second instead of on the next poll. Each view reloads the conversation when it (re)connects, keeps a once-a-minute safety refresh, and polls as before if it can't connect.
@@ -437,7 +437,7 @@ The app uses only functional cookies; there's no tracking or analytics.
 | `desk_2fa` | Server, `HttpOnly` | A sign-in that passed the password step and is waiting for its code | 10 minutes, removed once finished |
 | `desk_customer` | Server, `HttpOnly`, `SameSite=Lax` | A customer's [customer portal](#customer-portal) sign-in (a random token, stored hashed) | 14 days, removed on **Sign out** |
 
-- **After a refresh.** The widget reopens if it was open, reloads the conversation, and rejoins an answer that was still streaming. If the answer already finished, it shows it from the session history.
+- **After a refresh.** The widget reopens if it was open, reloads the conversation, and rejoins an answer that was still streaming, using the resume token the client kept in local storage (`desk_mr_active_request`: the channel and a single-use token that expires within 5 minutes, removed when the answer finishes). Text streamed while the page was reloading appears in full when the answer completes. If the answer already finished, or the token expired, it shows it from the session history.
 - **Clearing cookies.** This or switching browsers starts a new conversation. The old one stays in the dashboard.
 - **Ending a conversation.** Visitors can choose **End conversation** in the chat's **⋯** menu. The conversation stays in the dashboard, marked **Ended**, with replies turned off. Starting another chat soon after is paced, as described under [Abuse protection](#abuse-protection).
 - **Embedded widget.** In production the visitor cookies are `SameSite=None; Secure; Partitioned`, so the embedded `/widget` keeps its conversation inside an iframe on another site. The cookie is partitioned per embedding site, and cross-site requests are still rejected.
@@ -556,7 +556,6 @@ The chat widget is public and every answer costs model tokens, so the app limits
 | AI answers, site-wide | `GLOBAL_MESSAGES_PER_MINUTE` (default 20) and `GLOBAL_MESSAGES_PER_DAY` (default 800); see [Matching your ModelRiver plan](#matching-your-modelriver-plan) |
 | Conversation reloads (live updates, or polling when not live) | 30 per minute per conversation, 120 per minute per IP; each session is cached for 2 s, so a burst costs at most one ModelRiver call |
 | Live-update tokens | 20 per 10 min per conversation, 60 per 10 min per IP (each reconnection asks for one) |
-| Stream reconnects | 10 per minute per conversation |
 | New chat after **End conversation** | First one right away; then, within the hour, 60 s after the last end, then 2 min, 4 min, … up to 15 min. Tracked per browser (`desk_device`) and per IP, where the IP allows 3 free restarts so people sharing an office IP aren't slowed down. Only a conversation that really ended counts, so nobody can run up the wait for others on their IP |
 | Dashboard sign-in | 10 per 15 min per IP + account, 30 per 15 min per account (any IP), 50 per 15 min per IP (any account) |
 | Account lookups ([Integrations](#integrations)) | 10 per 10 min per conversation, 30 per 10 min per IP, 120 per minute per connector site-wide; results are cached for 2 minutes per conversation |

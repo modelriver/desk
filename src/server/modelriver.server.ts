@@ -81,10 +81,6 @@ export async function requestOnce(input: { messages: ChatMessage[]; metadata?: R
   return { data: res.data, sessionId: res.meta?.session_id ?? null }
 }
 
-export function reconnectChannel(channelId: string): Promise<AsyncAccepted> {
-  return call('POST', '/ai/reconnect', { channel_id: channelId })
-}
-
 export interface SessionSummary {
   id: string
   workflow: string
